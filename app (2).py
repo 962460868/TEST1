@@ -77,8 +77,8 @@ if 'file_uploader_key' not in st.session_state:
     st.session_state.file_uploader_key = 0
 
 # 配置常量
-MAX_LOCAL_CONCURRENT = 5  # 本地最大并发数
-API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
+MAX_LOCAL_CONCURRENT = 200  # 本地最大并发数
+API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
 WEBAPP_ID = "1947599512657453057"
 NODE_INFO = [
     {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"},
