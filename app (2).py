@@ -755,48 +755,39 @@ def main():
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
         
-        # --- START: MODIFICATION (思路二: 使用st.radio) ---
+        # --- (使用 st.radio 方案) ---
         
-        # 定义选项 (值) 和格式化函数 (显示)
         options = ["姿态迁移", "图像优化"]
         
         def format_func(option):
-            """根据选项值返回带emoji的显示文本"""
             if option == "姿态迁移":
                 return f"🤸 {option}"
             elif option == "图像优化":
                 return f"🎨 {option}"
             return option
 
-        # 从 session_state 确定当前索引
         try:
-            # 找到当前状态在选项列表中的位置
             current_index = options.index(st.session_state.selected_function)
         except ValueError:
-            # 如果状态异常，默认为第一个
             current_index = 0
             st.session_state.selected_function = options[0]
 
-        # 1. 使用 st.radio 替换两个 st.button
         selected_option = st.radio(
             label="功能选择",
             options=options,
             index=current_index,
             format_func=format_func,
-            label_visibility="collapsed" # 隐藏 "功能选择" 这个label
+            label_visibility="collapsed" 
         )
         
-        # 2. 无论是否改变，都用 radio 的当前值更新 session_state
-        #    st.radio 被点击时会自动 rerun，无需手动调用 st.rerun()
         st.session_state.selected_function = selected_option
         
-        # 3. 根据当前选择显示对应的 caption
         if st.session_state.selected_function == "姿态迁移":
             st.caption("角色图片 + 姿势参考图")
         else:
             st.caption("单图片智能优化")
             
-        # --- END: MODIFICATION ---
+        # --- (st.radio 方案结束) ---
         
         st.divider()
         
@@ -827,14 +818,13 @@ def main():
     # 主界面布局
     left_col, right_col = st.columns([1.8, 3.2])
 
-    # 左侧：功能界面
+    # --- START: MODIFICATION (思路三: 使用st.empty) ---
+    
+    # 1. 在左侧列中创建一个空的“占位符”
     with left_col:
-        if st.session_state.selected_function == "姿态迁移":
-            render_pose_interface()
-        else:
-            render_enhance_interface()
+        ui_placeholder = st.empty()
 
-    # 右侧：任务列表
+    # 2. 在右侧列中正常渲染任务列表
     with right_col:
         st.markdown("### 📋 任务列表")
 
@@ -843,7 +833,7 @@ def main():
         else:
             start_new_tasks()
 
-            # 显示任务
+            # (右侧列表的渲染逻辑保持不变)
             for task in reversed(st.session_state.tasks):
                 with st.container():
                     task_card_class = "pose-task-card" if task.task_type == "pose" else "enhance-task-card"
@@ -939,6 +929,17 @@ def main():
             with col3:
                 if st.button("🔄 强制刷新", use_container_width=True):
                     st.rerun()
+
+    # 3. 在脚本的最后（但在页脚和刷新逻辑之前），
+    #    我们才向这个“占位符”填充内容。
+    #    st.empty() 会确保在填充前，该区域是空白的。
+    with ui_placeholder.container():
+        if st.session_state.selected_function == "姿态迁移":
+            render_pose_interface()
+        else:
+            render_enhance_interface()
+
+    # --- END: MODIFICATION ---
 
     # 页脚
     st.divider()
