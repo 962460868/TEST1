@@ -78,6 +78,36 @@ st.markdown("""
         background-color: #0052a3; 
         transform: translateY(-1px);
     }
+    /* st.radio 按钮样式调整 */
+    div[role="radiogroup"] > div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem; /* 增加按钮间距 */
+    }
+    div[role="radiogroup"] label {
+        display: block; /* 让label占满一行 */
+        width: 100%;
+        padding: 0.75rem 1rem; /* 增大点击区域 */
+        border-radius: 6px;
+        border: 2px solid #e9ecef;
+        background: white;
+        transition: all 0.2s ease;
+        cursor: pointer;
+        font-weight: 500;
+        text-align: center;
+    }
+    /* 选中项的样式 */
+    div[role="radiogroup"] input:checked + div {
+        border-color: #0066cc;
+        background: #f8f9ff;
+        box-shadow: 0 2px 8px rgba(0,102,204,0.15);
+    }
+    /* 鼠标悬停样式 */
+    div[role="radiogroup"] label:hover {
+        border-color: #0066cc;
+        box-shadow: 0 2px 8px rgba(0,102,204,0.1);
+    }
+
     .task-card {
         background: white; border-radius: 8px; padding: 1rem; margin: 0.5rem 0;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #0066cc;
@@ -149,7 +179,7 @@ st.markdown("""
         font-style: italic;
     }
 
-    /* 功能选择样式 */
+    /* 功能选择样式 (原) */
     .function-selector {
         background: white;
         border-radius: 8px;
@@ -725,29 +755,48 @@ def main():
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
         
-        # 姿态迁移选项
-        pose_selected = st.button(
-            "🤸 姿态迁移", 
-            use_container_width=True,
-            type="primary" if st.session_state.selected_function == "姿态迁移" else "secondary"
+        # --- START: MODIFICATION (思路二: 使用st.radio) ---
+        
+        # 定义选项 (值) 和格式化函数 (显示)
+        options = ["姿态迁移", "图像优化"]
+        
+        def format_func(option):
+            """根据选项值返回带emoji的显示文本"""
+            if option == "姿态迁移":
+                return f"🤸 {option}"
+            elif option == "图像优化":
+                return f"🎨 {option}"
+            return option
+
+        # 从 session_state 确定当前索引
+        try:
+            # 找到当前状态在选项列表中的位置
+            current_index = options.index(st.session_state.selected_function)
+        except ValueError:
+            # 如果状态异常，默认为第一个
+            current_index = 0
+            st.session_state.selected_function = options[0]
+
+        # 1. 使用 st.radio 替换两个 st.button
+        selected_option = st.radio(
+            label="功能选择",
+            options=options,
+            index=current_index,
+            format_func=format_func,
+            label_visibility="collapsed" # 隐藏 "功能选择" 这个label
         )
-        if pose_selected:
-            st.session_state.selected_function = "姿态迁移"
-            st.rerun()
         
-        st.caption("角色图片 + 姿势参考图")
+        # 2. 无论是否改变，都用 radio 的当前值更新 session_state
+        #    st.radio 被点击时会自动 rerun，无需手动调用 st.rerun()
+        st.session_state.selected_function = selected_option
         
-        # 图像优化选项
-        enhance_selected = st.button(
-            "🎨 图像优化", 
-            use_container_width=True,
-            type="primary" if st.session_state.selected_function == "图像优化" else "secondary"
-        )
-        if enhance_selected:
-            st.session_state.selected_function = "图像优化"
-            st.rerun()
-        
-        st.caption("单图片智能优化")
+        # 3. 根据当前选择显示对应的 caption
+        if st.session_state.selected_function == "姿态迁移":
+            st.caption("角色图片 + 姿势参考图")
+        else:
+            st.caption("单图片智能优化")
+            
+        # --- END: MODIFICATION ---
         
         st.divider()
         
