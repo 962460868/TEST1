@@ -109,7 +109,7 @@ st.markdown("""
         background: #f8f9fa;
     }
     
-    /* 图片预览样式控制 */
+    /* 图像优化预览样式（仅保留给图像优化使用） */
     .image-preview-container {
         display: flex;
         justify-content: center;
@@ -121,24 +121,13 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
-    .stImage > div > img {
+    .enhance-preview .stImage > div > img {
         max-height: 400px !important;
         max-width: 100% !important;
         height: auto !important;
         width: auto !important;
         object-fit: contain !important;
         border-radius: 8px;
-    }
-    
-    .upload-container .stImage > div > img {
-        max-height: 400px !important;
-        max-width: 100% !important;
-        height: auto !important;
-        width: auto !important;
-        object-fit: contain !important;
-        border-radius: 6px;
-        display: block;
-        margin: 0 auto;
     }
     
     .preview-caption {
@@ -178,6 +167,28 @@ st.markdown("""
         background: #f8f9ff;
         box-shadow: 0 2px 8px rgba(0,102,204,0.15);
     }
+
+    /* 文件信息显示样式 */
+    .file-info {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 0.75rem;
+        margin: 0.5rem 0;
+        font-size: 0.9em;
+        color: #495057;
+    }
+    
+    .file-info .file-name {
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 0.25rem;
+    }
+    
+    .file-info .file-details {
+        color: #6c757d;
+        font-size: 0.85em;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -186,6 +197,30 @@ def get_session_key():
     if 'session_id' not in st.session_state:
         st.session_state.session_id = f"s_{int(time.time())}_{random.randint(100, 999)}"
     return st.session_state.session_id
+
+def clear_ui_state():
+    """清理UI相关的session state，防止切换功能时的残留问题"""
+    # 强制重置文件上传器的key
+    st.session_state.file_uploader_key += 1
+    
+    # 清理可能残留的上传器相关状态
+    keys_to_remove = []
+    for key in list(st.session_state.keys()):
+        if any(prefix in key for prefix in [
+            'uploader_', 
+            'character_uploader_', 
+            'reference_uploader_',
+            'FormSubmitter:'  # Streamlit内部的表单状态
+        ]):
+            keys_to_remove.append(key)
+    
+    # 删除残留的键值
+    for key in keys_to_remove:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # 重置上传成功状态
+    st.session_state.upload_success = False
 
 # 初始化Session State
 if 'selected_function' not in st.session_state:
@@ -546,13 +581,11 @@ def start_new_tasks():
             thread.daemon = True
             thread.start()
 
-# --- 8. 图片预览组件 ---
-def show_image_preview(image_file, caption_text, container_key):
-    """
-    (此函数在姿态迁移中已不再使用，但保留定义以备将来使用)
-    """
+# --- 8. 图片预览组件（仅用于图像优化）---
+def show_image_preview_for_enhance(image_file, caption_text):
+    """仅用于图像优化的图片预览"""
     if image_file:
-        st.markdown(f'<div class="image-preview-container">', unsafe_allow_html=True)
+        st.markdown('<div class="image-preview-container enhance-preview">', unsafe_allow_html=True)
         st.image(image_file, caption=caption_text, use_container_width=False)
         
         try:
@@ -578,6 +611,42 @@ def show_image_preview(image_file, caption_text, container_key):
             ''', unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
+
+def show_file_info(image_file, file_type="image"):
+    """显示文件信息（替代图片预览）"""
+    if image_file:
+        try:
+            from PIL import Image
+            import io
+            
+            # 尝试获取图片尺寸
+            img = Image.open(io.BytesIO(image_file.getvalue()))
+            width, height = img.size
+            file_size = len(image_file.getvalue()) / 1024
+            
+            st.markdown(f'''
+            <div class="file-info">
+                <div class="file-name">📄 {image_file.name}</div>
+                <div class="file-details">
+                    📏 尺寸: {width} × {height} px | 
+                    📦 大小: {file_size:.1f} KB | 
+                    🎨 格式: {image_file.type}
+                </div>
+            </div>
+            ''', unsafe_allow_html=True)
+            
+        except Exception as e:
+            # 如果无法读取图片信息，显示基本信息
+            file_size = len(image_file.getvalue()) / 1024
+            st.markdown(f'''
+            <div class="file-info">
+                <div class="file-name">📄 {image_file.name}</div>
+                <div class="file-details">
+                    📦 大小: {file_size:.1f} KB | 
+                    🎨 类型: {image_file.type}
+                </div>
+            </div>
+            ''', unsafe_allow_html=True)
 
 # --- 9. 下载按钮组件 ---
 def create_download_buttons(task):
@@ -628,7 +697,7 @@ def create_download_buttons(task):
 
 # --- 10. 功能界面 ---
 def render_pose_interface():
-    """姿态迁移界面"""
+    """姿态迁移界面（已移除图片预览）"""
     st.markdown("### 🤸 姿态迁移")
     st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
 
@@ -646,9 +715,11 @@ def render_pose_interface():
         help="选择需要处理的角色图片",
         key=f"character_uploader_{st.session_state.file_uploader_key}"
     )
-    # --- 预览功能已移除 ---
-    # if character_image:
-    #     show_image_preview(character_image, "角色图片预览", "character_preview")
+    
+    # 显示文件信息（不显示图片预览）
+    if character_image:
+        show_file_info(character_image, "character")
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 姿势参考图上传
@@ -661,9 +732,11 @@ def render_pose_interface():
         help="选择作为姿势参考的图片",
         key=f"reference_uploader_{st.session_state.file_uploader_key}"
     )
-    # --- 预览功能已移除 ---
-    # if reference_image:
-    #     show_image_preview(reference_image, "参考图预览", "reference_preview")
+    
+    # 显示文件信息（不显示图片预览）
+    if reference_image:
+        show_file_info(reference_image, "reference")
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 开始处理按钮
@@ -690,7 +763,7 @@ def render_pose_interface():
             st.error("❌ 请同时上传角色图片和姿势参考图！")
 
 def render_enhance_interface():
-    """图像优化界面"""
+    """图像优化界面（保留预览功能）"""
     st.markdown("### 🎨 图像优化")
     st.info("💡 支持批量上传，自动加入处理队列")
 
@@ -706,7 +779,18 @@ def render_enhance_interface():
         key=f"uploader_{st.session_state.file_uploader_key}"
     )
 
+    # 图像优化保留预览功能
     if uploaded_files:
+        if len(uploaded_files) == 1:
+            # 单张图片显示预览
+            show_image_preview_for_enhance(uploaded_files[0], "图片预览")
+        else:
+            # 多张图片显示列表信息
+            st.markdown("**📋 已选择的文件：**")
+            for i, file in enumerate(uploaded_files, 1):
+                show_file_info(file, f"file_{i}")
+        
+        # 自动添加到队列
         with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
             for file in uploaded_files:
                 st.session_state.task_counter += 1
@@ -730,26 +814,31 @@ def main():
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
         
-        # --- 修改：使用 st.radio 替换 st.button ---
-        logic_options = ["姿态迁移", "图像优化"]
-        display_options = {
-            "姿态迁移": "🤸 姿态迁移",
-            "图像优化": "🎨 图像优化"
-        }
-        
-        st.radio(
-            "功能选择",
-            options=logic_options,
-            key="selected_function", # Binds to st.session_state.selected_function
-            format_func=lambda x: display_options[x],
-            label_visibility="collapsed"
+        # 姿态迁移选项
+        pose_selected = st.button(
+            "🤸 姿态迁移", 
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == "姿态迁移" else "secondary"
         )
+        if pose_selected and st.session_state.selected_function != "姿态迁移":
+            st.session_state.selected_function = "姿态迁移"
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
         
-        # 根据选择显示不同的说明
-        if st.session_state.selected_function == "姿态迁移":
-            st.caption("角色图片 + 姿势参考图")
-        else:
-            st.caption("单图片智能优化")
+        st.caption("角色图片 + 姿势参考图")
+        
+        # 图像优化选项
+        enhance_selected = st.button(
+            "🎨 图像优化", 
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == "图像优化" else "secondary"
+        )
+        if enhance_selected and st.session_state.selected_function != "图像优化":
+            st.session_state.selected_function = "图像优化"
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+        
+        st.caption("单图片智能优化")
         
         st.divider()
         
@@ -771,10 +860,16 @@ def main():
         st.divider()
         st.caption(f"💡 全局并发限制: {MAX_CONCURRENT}")
         st.caption(f"🔄 自动刷新: {AUTO_REFRESH_INTERVAL}秒")
+        st.caption("✨ 姿态迁移已移除预览功能")
 
     # 主标题
     st.title("🎨 RunningHub AI - 智能图片处理工具")
     st.caption(f"当前模式: **{st.session_state.selected_function}** • 全局并发限制: {MAX_CONCURRENT}")
+    
+    # 显示功能状态
+    if st.session_state.selected_function == "姿态迁移":
+        st.info("ℹ️ 当前姿态迁移功能已移除图片预览，仅显示文件信息")
+    
     st.divider()
 
     # 主界面布局
@@ -782,8 +877,6 @@ def main():
 
     # 左侧：功能界面
     with left_col:
-        # 这里的逻辑保持不变，因为 st.session_state.selected_function 
-        # 存储的值 ("姿态迁移" / "图像优化") 没有改变
         if st.session_state.selected_function == "姿态迁移":
             render_pose_interface()
         else:
@@ -888,7 +981,10 @@ def main():
                         task.error_message = None
                         task.progress = 0
                         st.session_state.task_queue.append(task)
-                    st.success(f"✅ 已重启 {len(failed_tasks)} 个失败任务")
+                    if failed_tasks:
+                        st.success(f"✅ 已重启 {len(failed_tasks)} 个失败任务")
+                    else:
+                        st.info("ℹ️ 没有失败的任务需要重启")
                     st.rerun()
             
             with col3:
@@ -899,8 +995,8 @@ def main():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 多功能整合版</b><br>
-        <small>姿态迁移 + 图像优化 • 全局并发管理 • 统一队列处理</small>
+        <b>🚀 RunningHub AI - 多功能整合版 v2.0</b><br>
+        <small>姿态迁移 (无预览) + 图像优化 (有预览) • 全局并发管理 • 统一队列处理</small>
     </div>
     """, unsafe_allow_html=True)
 
@@ -909,6 +1005,7 @@ if __name__ == "__main__":
     try:
         main()
 
+        # 自动刷新逻辑
         has_active_tasks = any(t.status in ["PROCESSING", "QUEUED"] for t in st.session_state.tasks) or len(st.session_state.task_queue) > 0
 
         if has_active_tasks:
@@ -917,7 +1014,8 @@ if __name__ == "__main__":
 
     except Exception as e:
         error_str = str(e).lower()
-        if not any(kw in error_str for kw in ['websocket', 'tornado', 'streamlit', 'inotify']):
+        # 过滤掉Streamlit内部的无害错误
+        if not any(kw in error_str for kw in ['websocket', 'tornado', 'streamlit', 'inotify', 'connection broken']):
             st.error(f"⚠️ 系统错误: {str(e)[:100]}...")
             st.info("系统将自动恢复...")
             time.sleep(5)
