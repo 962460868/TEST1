@@ -204,33 +204,68 @@ if 'task_queue' not in st.session_state:
     st.session_state.task_queue = []   
 if 'last_selected_function' not in st.session_state:
     st.session_state.last_selected_function = "姿态迁移"
+if 'ui_force_refresh' not in st.session_state:
+    st.session_state.ui_force_refresh = False
 
-def clear_function_related_state():
-    """清理当前不使用功能的相关状态"""
-    keys_to_delete = []
+def aggressive_clear_function_state():
+    """激进的状态清理 - 在每次渲染前执行"""
     current_function = st.session_state.selected_function
+    keys_to_delete = []
     
+    # 获取所有session state的keys
     for key in list(st.session_state.keys()):
+        should_delete = False
+        
         if current_function == "姿态迁移":
-            # 当前是姿态迁移，清理图像优化相关
-            if (key.startswith('enhance_') or 
-                (key.startswith('uploader_') and 'enhance' in key) or
-                key.startswith('optimize_')):
-                keys_to_delete.append(key)
+            # 当前是姿态迁移，删除所有图像优化相关的keys
+            enhance_patterns = [
+                'enhance_uploader_', 'optimize_', 'uploader_', 
+                'uploaded_files', 'enhance_', 'image_optimization'
+            ]
+            if any(pattern in key for pattern in enhance_patterns):
+                should_delete = True
+                
         elif current_function == "图像优化":
-            # 当前是图像优化，清理姿态迁移相关
-            if (key.startswith('pose_') or 
-                key.startswith('character_') or 
-                key.startswith('reference_') or
-                'character' in key or 
-                'reference' in key):
-                keys_to_delete.append(key)
+            # 当前是图像优化，删除所有姿态迁移相关的keys  
+            pose_patterns = [
+                'pose_character_', 'pose_reference_', 'character_uploader_', 
+                'reference_uploader_', 'character_', 'reference_', 'pose_'
+            ]
+            if any(pattern in key for pattern in pose_patterns):
+                should_delete = True
+        
+        if should_delete:
+            keys_to_delete.append(key)
     
+    # 强制删除所有相关keys
     for key in keys_to_delete:
         try:
             del st.session_state[key]
         except:
             pass
+    
+    return len(keys_to_delete) > 0
+
+def ensure_ui_consistency():
+    """确保UI一致性 - 检测并处理状态不一致"""
+    current_function = st.session_state.selected_function
+    
+    # 如果检测到功能切换
+    if st.session_state.last_selected_function != current_function:
+        # 强制清理状态
+        aggressive_clear_function_state()
+        st.session_state.last_selected_function = current_function
+        st.session_state.file_uploader_key += 1
+        st.session_state.ui_force_refresh = True
+        return True
+    
+    # 即使没有切换，也要检查是否有不当的UI状态残存
+    cleaned = aggressive_clear_function_state()
+    if cleaned:
+        st.session_state.file_uploader_key += 1
+        return True
+    
+    return False
 
 # --- 4. 任务类 ---   
 class TaskItem:   
@@ -655,6 +690,9 @@ def create_download_buttons(task):
 # --- 10. 功能界面 ---   
 def render_pose_interface():   
     """姿态迁移界面"""   
+    # 强制检查UI一致性
+    ensure_ui_consistency()
+    
     st.markdown("### 🤸 姿态迁移")   
     st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")   
   
@@ -670,7 +708,7 @@ def render_pose_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],   
         accept_multiple_files=False,   
         help="选择需要处理的角色图片",   
-        key=f"pose_character_{st.session_state.file_uploader_key}"   
+        key=f"pose_character_{st.session_state.file_uploader_key}_{st.session_state.selected_function}"   
     )   
     if character_image:   
         show_image_preview(character_image, "角色图片预览", "character_preview")   
@@ -684,7 +722,7 @@ def render_pose_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],   
         accept_multiple_files=False,   
         help="选择作为姿势参考的图片",   
-        key=f"pose_reference_{st.session_state.file_uploader_key}"   
+        key=f"pose_reference_{st.session_state.file_uploader_key}_{st.session_state.selected_function}"   
     )   
     if reference_image:   
         show_image_preview(reference_image, "参考图预览", "reference_preview")   
@@ -715,6 +753,9 @@ def render_pose_interface():
   
 def render_enhance_interface():   
     """图像优化界面"""   
+    # 强制检查UI一致性
+    ensure_ui_consistency()
+    
     st.markdown("### 🎨 图像优化")   
     st.info("💡 支持批量上传，自动加入处理队列")   
   
@@ -727,7 +768,7 @@ def render_enhance_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],   
         accept_multiple_files=True,   
         help="支持批量上传，自动加入处理队列",   
-        key=f"enhance_uploader_{st.session_state.file_uploader_key}"   
+        key=f"enhance_uploader_{st.session_state.file_uploader_key}_{st.session_state.selected_function}"   
     )   
   
     if uploaded_files:   
@@ -750,11 +791,10 @@ def render_enhance_interface():
   
 # --- 11. 主界面 ---   
 def main():
-    # 检测功能切换并清理UI状态
-    if st.session_state.last_selected_function != st.session_state.selected_function:
-        clear_function_related_state()
-        st.session_state.last_selected_function = st.session_state.selected_function
-        st.session_state.file_uploader_key += 1
+    # 最优先：在任何UI渲染前检查并修复状态一致性
+    ui_needs_refresh = ensure_ui_consistency()
+    if ui_needs_refresh and st.session_state.ui_force_refresh:
+        st.session_state.ui_force_refresh = False
         st.rerun()
     
     # 侧边栏功能选择  
@@ -908,6 +948,9 @@ def main():
                     st.session_state.tasks = []   
                     st.session_state.task_queue = []   
                     st.session_state.download_clicked = {}   
+                    # 清空后也要清理UI状态
+                    aggressive_clear_function_state()
+                    st.session_state.file_uploader_key += 1
                     st.rerun()   
   
             with col2:   
@@ -925,6 +968,9 @@ def main():
               
             with col3:   
                 if st.button("🔄 强制刷新", use_container_width=True):   
+                    # 强制刷新时也清理UI状态
+                    aggressive_clear_function_state()
+                    st.session_state.file_uploader_key += 1
                     st.rerun()   
   
     # 页脚  
@@ -932,7 +978,7 @@ def main():
     st.markdown("""   
     <div style='text-align: center; color: #6c757d; padding: 15px;'>  
         <b>🚀 RunningHub AI - 多功能整合版</b><br>  
-        <small>姿态迁移 + 图像优化 • 全局并发管理 • 统一队列处理 • UI状态隔离</small>  
+        <small>姿态迁移 + 图像优化 • 全局并发管理 • 统一队列处理 • 激进UI隔离</small>  
     </div>  
     """, unsafe_allow_html=True)   
   
