@@ -97,6 +97,41 @@ st.markdown("""
         margin: 0.5rem 0;
         background: #f8f9fa;
     }
+    
+    /* 图片预览样式控制 */
+    .image-preview-container {
+        display: flex;
+        justify-content: center;
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        overflow: hidden;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* 控制预览图片尺寸 */
+    .stImage > div > img {
+        max-height: 400px !important;
+        max-width: 100% !important;
+        height: auto !important;
+        width: auto !important;
+        object-fit: contain !important;
+        border-radius: 8px;
+    }
+    
+    /* 专门为上传预览区域的图片设置样式 */
+    .upload-container .stImage > div > img {
+        max-height: 400px !important;
+        max-width: 100% !important;
+        height: auto !important;
+        width: auto !important;
+        object-fit: contain !important;
+        border-radius: 6px;
+        display: block;
+        margin: 0 auto;
+    }
+    
     .result-images {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -108,6 +143,15 @@ st.markdown("""
         border-radius: 6px;
         overflow: hidden;
         background: white;
+    }
+    
+    /* 预览图片标题样式 */
+    .preview-caption {
+        text-align: center;
+        color: #666;
+        font-size: 0.9em;
+        margin: 5px 0;
+        font-style: italic;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -134,10 +178,10 @@ if 'task_queue' not in st.session_state:
 
 # --- 4. 任务类 ---
 class TaskItem:
-    def __init__(self, task_id, main_image_data, main_image_name, reference_image_data, reference_image_name, session_id):
+    def __init__(self, task_id, character_image_data, character_image_name, reference_image_data, reference_image_name, session_id):
         self.task_id = task_id
-        self.main_image_data = main_image_data
-        self.main_image_name = main_image_name
+        self.character_image_data = character_image_data  # 角色图片数据
+        self.character_image_name = character_image_name  # 角色图片名称
         self.reference_image_data = reference_image_data
         self.reference_image_name = reference_image_name
         self.session_id = session_id
@@ -173,7 +217,7 @@ def upload_file_with_retry(file_data, file_name, api_key, max_retries=3):
             
             result = response.json()
             if result.get("code") == 0:
-                return result['data'] ['fileName']
+                return result['data']['fileName']
             else:
                 raise Exception(f"上传失败: {result.get('msg', '未知错误')}")
                 
@@ -203,7 +247,7 @@ def run_task_with_retry(api_key, webapp_id, node_info_list, max_retries=3):
             result = response.json()
             if result.get("code") != 0:
                 raise Exception(f"任务发起失败: {result.get('msg', '未知错误')}")
-            return result['data'] ['taskId']
+            return result['data']['taskId']
             
         except requests.exceptions.Timeout:
             if attempt < max_retries - 1:
@@ -267,9 +311,9 @@ def process_single_task(task, api_key, webapp_id, node_info):
     task.start_time = time.time()
 
     try:
-        # 上传主图片
+        # 上传角色图片
         task.progress = 10
-        main_uploaded_filename = upload_file_with_retry(task.main_image_data, task.main_image_name, api_key)
+        character_uploaded_filename = upload_file_with_retry(task.character_image_data, task.character_image_name, api_key)
 
         # 上传姿势参考图
         task.progress = 20
@@ -279,8 +323,8 @@ def process_single_task(task, api_key, webapp_id, node_info):
         task.progress = 25
         node_info_list = copy.deepcopy(node_info)
         for node in node_info_list:
-            if node["nodeId"] == "245":  # 主图片
-                node["fieldValue"] = main_uploaded_filename
+            if node["nodeId"] == "245":  # 角色图片
+                node["fieldValue"] = character_uploaded_filename
             elif node["nodeId"] == "244":  # 姿势参考图
                 node["fieldValue"] = reference_uploaded_filename
 
@@ -322,7 +366,7 @@ def process_single_task(task, api_key, webapp_id, node_info):
             image_data = download_result_image(url)
             task.result_data_list.append({
                 'data': image_data,
-                'filename': f"result_{i+1}_{task.main_image_name}",
+                'filename': f"result_{i+1}_{task.character_image_name}",
                 'url': url
             })
 
@@ -389,7 +433,44 @@ def start_new_tasks():
             thread.daemon = True
             thread.start()
 
-# --- 8. 下载按钮组件 ---
+# --- 8. 图片预览组件 ---
+def show_image_preview(image_file, caption_text, container_key):
+    """显示尺寸受控的图片预览"""
+    if image_file:
+        # 使用HTML容器来更好地控制样式
+        st.markdown(f'<div class="image-preview-container">', unsafe_allow_html=True)
+        
+        # 显示图片，Streamlit会自动应用CSS样式
+        st.image(image_file, caption=caption_text, use_container_width=False)
+        
+        # 显示图片信息
+        try:
+            from PIL import Image
+            import io
+            
+            # 获取图片尺寸信息
+            img = Image.open(io.BytesIO(image_file.getvalue()))
+            width, height = img.size
+            file_size = len(image_file.getvalue()) / 1024  # KB
+            
+            st.markdown(f'''
+            <div class="preview-caption">
+                📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB
+            </div>
+            ''', unsafe_allow_html=True)
+            
+        except Exception as e:
+            # 如果无法获取图片信息，只显示文件大小
+            file_size = len(image_file.getvalue()) / 1024
+            st.markdown(f'''
+            <div class="preview-caption">
+                📦 大小: {file_size:.1f} KB
+            </div>
+            ''', unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# --- 9. 下载按钮组件 ---
 def create_download_buttons(task):
     """创建多个下载按钮"""
     if not task.result_data_list:
@@ -428,10 +509,10 @@ def create_download_buttons(task):
                     use_container_width=True
                 )
 
-# --- 9. 主界面 ---
+# --- 10. 主界面 ---
 def main():
     st.title("🎨 RunningHub AI - 智能图片优化工具")
-    st.caption("双图片处理模式 • 主图片 + 姿势参考图 • 支持多结果输出")
+    st.caption("双图片处理模式 • 角色图片 + 姿势参考图 • 支持多结果输出")
 
     st.info(f"⏱️ 预计处理时间: {DISPLAY_TIMEOUT_MINUTES}分钟 | 🔄 刷新间隔: {AUTO_REFRESH_INTERVAL}秒 | 📊 最大并发: {MAX_CONCURRENT}")
     st.divider()
@@ -443,24 +524,24 @@ def main():
     with left_col:
         st.markdown("### 📁 双图片上传")
         
-        st.info("💡 需要同时上传主图片和姿势参考图才能开始处理")
+        st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
 
         if st.session_state.upload_success:
             st.success("✅ 任务已添加到处理队列!")
             st.session_state.upload_success = False
 
-        # 主图片上传
+        # 角色图片上传
         st.markdown('<div class="upload-container">', unsafe_allow_html=True)
-        st.markdown("**📷 主图片**")
-        main_image = st.file_uploader(
-            "选择主图片",
+        st.markdown("**👤 角色图片**")
+        character_image = st.file_uploader(
+            "选择角色图片",
             type=['png', 'jpg', 'jpeg', 'webp'],
             accept_multiple_files=False,
-            help="选择需要处理的主要图片",
-            key=f"main_uploader_{st.session_state.file_uploader_key}"
+            help="选择需要处理的角色图片",
+            key=f"character_uploader_{st.session_state.file_uploader_key}"
         )
-        if main_image:
-            st.image(main_image, caption="主图片预览", use_container_width=True)
+        if character_image:
+            show_image_preview(character_image, "角色图片预览", "character_preview")
         st.markdown('</div>', unsafe_allow_html=True)
 
         # 姿势参考图上传
@@ -474,18 +555,18 @@ def main():
             key=f"reference_uploader_{st.session_state.file_uploader_key}"
         )
         if reference_image:
-            st.image(reference_image, caption="参考图预览", use_container_width=True)
+            show_image_preview(reference_image, "参考图预览", "reference_preview")
         st.markdown('</div>', unsafe_allow_html=True)
 
         # 开始处理按钮
         if st.button("🚀 开始处理", use_container_width=True, type="primary"):
-            if main_image and reference_image:
+            if character_image and reference_image:
                 with st.spinner('添加任务到队列...'):
                     st.session_state.task_counter += 1
                     task = TaskItem(
                         st.session_state.task_counter, 
-                        main_image.getvalue(), 
-                        main_image.name,
+                        character_image.getvalue(), 
+                        character_image.name,
                         reference_image.getvalue(),
                         reference_image.name,
                         get_session_key()
@@ -497,7 +578,7 @@ def main():
                 st.session_state.file_uploader_key += 1
                 st.rerun()
             else:
-                st.error("❌ 请同时上传主图片和姿势参考图！")
+                st.error("❌ 请同时上传角色图片和姿势参考图！")
 
         st.divider()
 
@@ -537,8 +618,8 @@ def main():
                     col1, col2 = st.columns([4, 1])
 
                     with col1:
-                        st.markdown(f"**主图: {task.main_image_name}** `#{task.task_id}`")
-                        st.markdown(f'<div class="compact-info">📷 主图: {task.main_image_name}</div>', unsafe_allow_html=True)
+                        st.markdown(f"**角色: {task.character_image_name}** `#{task.task_id}`")
+                        st.markdown(f'<div class="compact-info">👤 角色: {task.character_image_name}</div>', unsafe_allow_html=True)
                         st.markdown(f'<div class="compact-info">🤸 参考: {task.reference_image_name}</div>', unsafe_allow_html=True)
                         
                         if task.retry_count > 0:
@@ -615,12 +696,12 @@ def main():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 双图片处理版 v2.1</b><br>
-        <small>主图片 + 姿势参考图 • 支持多结果输出 • 优化超时处理</small>
+        <b>🚀 RunningHub AI - 双图片处理版 v2.3</b><br>
+        <small>角色图片 + 姿势参考图 • 优化预览尺寸 • 支持多结果输出</small>
     </div>
     """, unsafe_allow_html=True)
 
-# --- 10. 应用入口 ---
+# --- 11. 应用入口 ---
 if __name__ == "__main__":
     try:
         main()
