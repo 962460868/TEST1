@@ -101,19 +101,7 @@ st.markdown("""
         padding: 2px 6px;
         border-radius: 3px;
     }
-    
-    /* 姿态迁移上传容器样式 - 移除虚线边框 */
-    .pose-upload-container {
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        background: #ffffff;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    
-    /* 图像优化上传容器样式 - 保留虚线边框 */
-    .enhance-upload-container {
+    .upload-container {
         border: 2px dashed #0066cc;
         border-radius: 8px;
         padding: 1rem;
@@ -121,7 +109,7 @@ st.markdown("""
         background: #f8f9fa;
     }
     
-    /* 图像优化预览样式 */
+    /* 图像优化预览样式（仅保留给图像优化使用） */
     .image-preview-container {
         display: flex;
         justify-content: center;
@@ -201,15 +189,6 @@ st.markdown("""
         color: #6c757d;
         font-size: 0.85em;
     }
-
-    /* 上传区域标题样式 */
-    .upload-section-title {
-        font-weight: 600;
-        color: #495057;
-        margin-bottom: 0.5rem;
-        padding: 0.25rem 0;
-        border-bottom: 1px solid #dee2e6;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -242,10 +221,6 @@ def clear_ui_state():
     
     # 重置上传成功状态
     st.session_state.upload_success = False
-
-def clear_file_uploaders():
-    """清空文件上传器显示，用于任务提交后"""
-    st.session_state.file_uploader_key += 1
 
 # 初始化Session State
 if 'selected_function' not in st.session_state:
@@ -722,7 +697,7 @@ def create_download_buttons(task):
 
 # --- 10. 功能界面 ---
 def render_pose_interface():
-    """姿态迁移界面（已移除图片预览和虚线框）"""
+    """姿态迁移界面（已移除图片预览）"""
     st.markdown("### 🤸 姿态迁移")
     st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
 
@@ -730,16 +705,15 @@ def render_pose_interface():
         st.success("✅ 任务已添加到处理队列!")
         st.session_state.upload_success = False
 
-    # 角色图片上传 - 使用新的无虚线边框样式
-    st.markdown('<div class="pose-upload-container">', unsafe_allow_html=True)
-    st.markdown('<div class="upload-section-title">👤 角色图片</div>', unsafe_allow_html=True)
+    # 角色图片上传
+    st.markdown('<div class="upload-container">', unsafe_allow_html=True)
+    st.markdown("**👤 角色图片**")
     character_image = st.file_uploader(
         "选择角色图片",
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=False,
         help="选择需要处理的角色图片",
-        key=f"character_uploader_{st.session_state.file_uploader_key}",
-        label_visibility="collapsed"  # 隐藏默认标签
+        key=f"character_uploader_{st.session_state.file_uploader_key}"
     )
     
     # 显示文件信息（不显示图片预览）
@@ -748,16 +722,15 @@ def render_pose_interface():
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 姿势参考图上传 - 使用新的无虚线边框样式
-    st.markdown('<div class="pose-upload-container">', unsafe_allow_html=True)
-    st.markdown('<div class="upload-section-title">🤸 姿势参考图</div>', unsafe_allow_html=True)
+    # 姿势参考图上传
+    st.markdown('<div class="upload-container">', unsafe_allow_html=True)
+    st.markdown("**🤸 姿势参考图**")
     reference_image = st.file_uploader(
         "选择姿势参考图",
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=False,
         help="选择作为姿势参考的图片",
-        key=f"reference_uploader_{st.session_state.file_uploader_key}",
-        label_visibility="collapsed"  # 隐藏默认标签
+        key=f"reference_uploader_{st.session_state.file_uploader_key}"
     )
     
     # 显示文件信息（不显示图片预览）
@@ -784,13 +757,13 @@ def render_pose_interface():
                 st.session_state.task_queue.append(task)
 
             st.session_state.upload_success = True
-            clear_file_uploaders()  # 立即清空文件上传器
+            st.session_state.file_uploader_key += 1
             st.rerun()
         else:
             st.error("❌ 请同时上传角色图片和姿势参考图！")
 
 def render_enhance_interface():
-    """图像优化界面（保留预览功能和虚线边框）"""
+    """图像优化界面（保留预览功能）"""
     st.markdown("### 🎨 图像优化")
     st.info("💡 支持批量上传，自动加入处理队列")
 
@@ -798,8 +771,6 @@ def render_enhance_interface():
         st.success("✅ 文件已添加到处理队列!")
         st.session_state.upload_success = False
 
-    # 使用带虚线边框的容器
-    st.markdown('<div class="enhance-upload-container">', unsafe_allow_html=True)
     uploaded_files = st.file_uploader(
         "选择图片文件",
         type=['png', 'jpg', 'jpeg', 'webp'],
@@ -834,10 +805,8 @@ def render_enhance_interface():
                 st.session_state.task_queue.append(task)
 
             st.session_state.upload_success = True
-            clear_file_uploaders()  # 立即清空文件上传器
+            st.session_state.file_uploader_key += 1
             st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 11. 主界面 ---
 def main():
@@ -891,7 +860,7 @@ def main():
         st.divider()
         st.caption(f"💡 全局并发限制: {MAX_CONCURRENT}")
         st.caption(f"🔄 自动刷新: {AUTO_REFRESH_INTERVAL}秒")
-        st.caption("✨ 姿态迁移: 无预览 | 图像优化: 有预览")
+        st.caption("✨ 姿态迁移已移除预览功能")
 
     # 主标题
     st.title("🎨 RunningHub AI - 智能图片处理工具")
@@ -899,9 +868,7 @@ def main():
     
     # 显示功能状态
     if st.session_state.selected_function == "姿态迁移":
-        st.info("ℹ️ 姿态迁移: 简洁模式 - 无图片预览，任务提交后自动清空上传器")
-    else:
-        st.info("ℹ️ 图像优化: 完整模式 - 支持图片预览，任务提交后自动清空上传器")
+        st.info("ℹ️ 当前姿态迁移功能已移除图片预览，仅显示文件信息")
     
     st.divider()
 
@@ -1028,8 +995,8 @@ def main():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 多功能整合版 v2.1</b><br>
-        <small>姿态迁移 (简洁模式) + 图像优化 (完整模式) • 自动清空上传器 • 统一队列处理</small>
+        <b>🚀 RunningHub AI - 多功能整合版 v2.0</b><br>
+        <small>姿态迁移 (无预览) + 图像优化 (有预览) • 全局并发管理 • 统一队列处理</small>
     </div>
     """, unsafe_allow_html=True)
 
