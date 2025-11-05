@@ -78,36 +78,6 @@ st.markdown("""
         background-color: #0052a3; 
         transform: translateY(-1px);
     }
-    /* st.radio 按钮样式调整 */
-    div[role="radiogroup"] > div {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem; /* 增加按钮间距 */
-    }
-    div[role="radiogroup"] label {
-        display: block; /* 让label占满一行 */
-        width: 100%;
-        padding: 0.75rem 1rem; /* 增大点击区域 */
-        border-radius: 6px;
-        border: 2px solid #e9ecef;
-        background: white;
-        transition: all 0.2s ease;
-        cursor: pointer;
-        font-weight: 500;
-        text-align: center;
-    }
-    /* 选中项的样式 */
-    div[role="radiogroup"] input:checked + div {
-        border-color: #0066cc;
-        background: #f8f9ff;
-        box-shadow: 0 2px 8px rgba(0,102,204,0.15);
-    }
-    /* 鼠标悬停样式 */
-    div[role="radiogroup"] label:hover {
-        border-color: #0066cc;
-        box-shadow: 0 2px 8px rgba(0,102,204,0.1);
-    }
-
     .task-card {
         background: white; border-radius: 8px; padding: 1rem; margin: 0.5rem 0;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #0066cc;
@@ -179,7 +149,7 @@ st.markdown("""
         font-style: italic;
     }
 
-    /* 功能选择样式 (原) */
+    /* 功能选择样式 */
     .function-selector {
         background: white;
         border-radius: 8px;
@@ -578,6 +548,9 @@ def start_new_tasks():
 
 # --- 8. 图片预览组件 ---
 def show_image_preview(image_file, caption_text, container_key):
+    """
+    (此函数在姿态迁移中已不再使用，但保留定义以备将来使用)
+    """
     if image_file:
         st.markdown(f'<div class="image-preview-container">', unsafe_allow_html=True)
         st.image(image_file, caption=caption_text, use_container_width=False)
@@ -673,8 +646,9 @@ def render_pose_interface():
         help="选择需要处理的角色图片",
         key=f"character_uploader_{st.session_state.file_uploader_key}"
     )
-    if character_image:
-        show_image_preview(character_image, "角色图片预览", "character_preview")
+    # --- 预览功能已移除 ---
+    # if character_image:
+    #     show_image_preview(character_image, "角色图片预览", "character_preview")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 姿势参考图上传
@@ -687,8 +661,9 @@ def render_pose_interface():
         help="选择作为姿势参考的图片",
         key=f"reference_uploader_{st.session_state.file_uploader_key}"
     )
-    if reference_image:
-        show_image_preview(reference_image, "参考图预览", "reference_preview")
+    # --- 预览功能已移除 ---
+    # if reference_image:
+    #     show_image_preview(reference_image, "参考图预览", "reference_preview")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 开始处理按钮
@@ -755,39 +730,26 @@ def main():
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
         
-        # --- (使用 st.radio 方案) ---
+        # --- 修改：使用 st.radio 替换 st.button ---
+        logic_options = ["姿态迁移", "图像优化"]
+        display_options = {
+            "姿态迁移": "🤸 姿态迁移",
+            "图像优化": "🎨 图像优化"
+        }
         
-        options = ["姿态迁移", "图像优化"]
-        
-        def format_func(option):
-            if option == "姿态迁移":
-                return f"🤸 {option}"
-            elif option == "图像优化":
-                return f"🎨 {option}"
-            return option
-
-        try:
-            current_index = options.index(st.session_state.selected_function)
-        except ValueError:
-            current_index = 0
-            st.session_state.selected_function = options[0]
-
-        selected_option = st.radio(
-            label="功能选择",
-            options=options,
-            index=current_index,
-            format_func=format_func,
-            label_visibility="collapsed" 
+        st.radio(
+            "功能选择",
+            options=logic_options,
+            key="selected_function", # Binds to st.session_state.selected_function
+            format_func=lambda x: display_options[x],
+            label_visibility="collapsed"
         )
         
-        st.session_state.selected_function = selected_option
-        
+        # 根据选择显示不同的说明
         if st.session_state.selected_function == "姿态迁移":
             st.caption("角色图片 + 姿势参考图")
         else:
             st.caption("单图片智能优化")
-            
-        # --- (st.radio 方案结束) ---
         
         st.divider()
         
@@ -818,13 +780,16 @@ def main():
     # 主界面布局
     left_col, right_col = st.columns([1.8, 3.2])
 
-    # --- START: MODIFICATION (思路三: 使用st.empty) ---
-    
-    # 1. 在左侧列中创建一个空的“占位符”
+    # 左侧：功能界面
     with left_col:
-        ui_placeholder = st.empty()
+        # 这里的逻辑保持不变，因为 st.session_state.selected_function 
+        # 存储的值 ("姿态迁移" / "图像优化") 没有改变
+        if st.session_state.selected_function == "姿态迁移":
+            render_pose_interface()
+        else:
+            render_enhance_interface()
 
-    # 2. 在右侧列中正常渲染任务列表
+    # 右侧：任务列表
     with right_col:
         st.markdown("### 📋 任务列表")
 
@@ -833,7 +798,7 @@ def main():
         else:
             start_new_tasks()
 
-            # (右侧列表的渲染逻辑保持不变)
+            # 显示任务
             for task in reversed(st.session_state.tasks):
                 with st.container():
                     task_card_class = "pose-task-card" if task.task_type == "pose" else "enhance-task-card"
@@ -929,17 +894,6 @@ def main():
             with col3:
                 if st.button("🔄 强制刷新", use_container_width=True):
                     st.rerun()
-
-    # 3. 在脚本的最后（但在页脚和刷新逻辑之前），
-    #    我们才向这个“占位符”填充内容。
-    #    st.empty() 会确保在填充前，该区域是空白的。
-    with ui_placeholder.container():
-        if st.session_state.selected_function == "姿态迁移":
-            render_pose_interface()
-        else:
-            render_enhance_interface()
-
-    # --- END: MODIFICATION ---
 
     # 页脚
     st.divider()
