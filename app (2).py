@@ -26,15 +26,15 @@ logging.getLogger("tornado.general").setLevel(logging.ERROR)
 API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
 WEBAPP_ID = "1975745173911154689"
 NODE_INFO = [
-    {"nodeId": "245", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片"},
+    {"nodeId": "245", "fieldName": "image", "fieldValue": "placeholder.png", "description": "角色图片"},  # 修改描述
     {"nodeId": "244", "fieldName": "image", "fieldValue": "placeholder.png", "description": "姿势参考图"}
 ]
 
-# 系统配置 - 增加超时时间
-MAX_CONCURRENT = 3  # 减少并发数避免资源冲突
+# 系统配置
+MAX_CONCURRENT = 3
 MAX_RETRIES = 3
-POLL_INTERVAL = 5  # 增加轮询间隔
-MAX_POLL_COUNT = 240  # 20分钟超时
+POLL_INTERVAL = 5
+MAX_POLL_COUNT = 240
 AUTO_REFRESH_INTERVAL = 8
 DISPLAY_TIMEOUT_MINUTES = 5
 ACTUAL_TIMEOUT_MINUTES = 20
@@ -180,14 +180,14 @@ if 'task_queue' not in st.session_state:
 class TaskItem:
     def __init__(self, task_id, character_image_data, character_image_name, reference_image_data, reference_image_name, session_id):
         self.task_id = task_id
-        self.character_image_data = character_image_data  # 角色图片数据
-        self.character_image_name = character_image_name  # 角色图片名称
+        self.character_image_data = character_image_data
+        self.character_image_name = character_image_name
         self.reference_image_data = reference_image_data
         self.reference_image_name = reference_image_name
         self.session_id = session_id
         self.status = "QUEUED"
         self.progress = 0
-        self.result_data_list = []  # 修改为列表，支持多个结果
+        self.result_data_list = []
         self.error_message = None
         self.api_task_id = None
         self.created_at = datetime.now()
@@ -437,21 +437,16 @@ def start_new_tasks():
 def show_image_preview(image_file, caption_text, container_key):
     """显示尺寸受控的图片预览"""
     if image_file:
-        # 使用HTML容器来更好地控制样式
         st.markdown(f'<div class="image-preview-container">', unsafe_allow_html=True)
-        
-        # 显示图片，Streamlit会自动应用CSS样式
         st.image(image_file, caption=caption_text, use_container_width=False)
         
-        # 显示图片信息
         try:
             from PIL import Image
             import io
             
-            # 获取图片尺寸信息
             img = Image.open(io.BytesIO(image_file.getvalue()))
             width, height = img.size
-            file_size = len(image_file.getvalue()) / 1024  # KB
+            file_size = len(image_file.getvalue()) / 1024
             
             st.markdown(f'''
             <div class="preview-caption">
@@ -460,7 +455,6 @@ def show_image_preview(image_file, caption_text, container_key):
             ''', unsafe_allow_html=True)
             
         except Exception as e:
-            # 如果无法获取图片信息，只显示文件大小
             file_size = len(image_file.getvalue()) / 1024
             st.markdown(f'''
             <div class="preview-caption">
@@ -478,7 +472,6 @@ def create_download_buttons(task):
         
     st.markdown("### 📥 下载结果")
     
-    # 如果只有一个结果，显示单个下载按钮
     if len(task.result_data_list) == 1:
         result = task.result_data_list[0]
         file_size = len(result['data']) / 1024
@@ -492,7 +485,6 @@ def create_download_buttons(task):
             use_container_width=True
         )
     else:
-        # 多个结果，显示网格布局
         cols = st.columns(min(len(task.result_data_list), 3))
         
         for i, result in enumerate(task.result_data_list):
@@ -511,6 +503,10 @@ def create_download_buttons(task):
 
 # --- 10. 主界面 ---
 def main():
+    # 强制清除缓存
+    if st.button("🔄 刷新页面", key="force_refresh", help="如果界面显示不正常，点击此按钮刷新"):
+        st.rerun()
+    
     st.title("🎨 RunningHub AI - 智能图片优化工具")
     st.caption("双图片处理模式 • 角色图片 + 姿势参考图 • 支持多结果输出")
 
@@ -534,10 +530,10 @@ def main():
         st.markdown('<div class="upload-container">', unsafe_allow_html=True)
         st.markdown("**👤 角色图片**")
         character_image = st.file_uploader(
-            "选择角色图片",
+            "选择角色图片",  # 确保这里是角色图片
             type=['png', 'jpg', 'jpeg', 'webp'],
             accept_multiple_files=False,
-            help="选择需要处理的角色图片",
+            help="选择需要处理的角色图片",  # 确保帮助文本也是角色图片
             key=f"character_uploader_{st.session_state.file_uploader_key}"
         )
         if character_image:
@@ -578,7 +574,7 @@ def main():
                 st.session_state.file_uploader_key += 1
                 st.rerun()
             else:
-                st.error("❌ 请同时上传角色图片和姿势参考图！")
+                st.error("❌ 请同时上传角色图片和姿势参考图！")  # 确保错误信息也是角色图片
 
         st.divider()
 
@@ -605,7 +601,7 @@ def main():
         st.markdown("### 📋 任务列表")
 
         if not st.session_state.tasks:
-            st.info("💡 暂无任务，请上传双图片开始处理")
+            st.info("💡 暂无任务，请上传角色图片和姿势参考图开始处理")  # 确保提示信息也是角色图片
         else:
             start_new_tasks()
 
@@ -696,7 +692,7 @@ def main():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 双图片处理版 v2.3</b><br>
+        <b>🚀 RunningHub AI - 双图片处理版 v2.4</b><br>
         <small>角色图片 + 姿势参考图 • 优化预览尺寸 • 支持多结果输出</small>
     </div>
     """, unsafe_allow_html=True)
