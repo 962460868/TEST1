@@ -623,105 +623,108 @@ def create_download_buttons(task):
             use_container_width=True
         )
 
-# --- 10. 功能界面 ---
+# --- 10. 功能界面（修改后 - 添加唯一key前缀和容器隔离）---
 def render_pose_interface():
-    """姿态迁移界面"""
-    st.markdown("### 🤸 姿态迁移")
-    st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
+    """姿态迁移界面 - 使用唯一的key前缀"""
+    with st.container():
+        st.markdown("### 🤸 姿态迁移")
+        st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
 
-    if st.session_state.upload_success:
-        st.success("✅ 任务已添加到处理队列!")
-        st.session_state.upload_success = False
+        if st.session_state.upload_success:
+            st.success("✅ 任务已添加到处理队列!")
+            st.session_state.upload_success = False
 
-    # 角色图片上传
-    st.markdown('<div class="upload-container">', unsafe_allow_html=True)
-    st.markdown("**👤 角色图片**")
-    character_image = st.file_uploader(
-        "选择角色图片",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=False,
-        help="选择需要处理的角色图片",
-        key=f"character_uploader_{st.session_state.file_uploader_key}"
-    )
-    if character_image:
-        show_image_preview(character_image, "角色图片预览", "character_preview")
-    st.markdown('</div>', unsafe_allow_html=True)
+        # 角色图片上传 - 添加 pose_character_ 前缀
+        st.markdown('<div class="upload-container">', unsafe_allow_html=True)
+        st.markdown("**👤 角色图片**")
+        character_image = st.file_uploader(
+            "选择角色图片",
+            type=['png', 'jpg', 'jpeg', 'webp'],
+            accept_multiple_files=False,
+            help="选择需要处理的角色图片",
+            key=f"pose_character_{st.session_state.file_uploader_key}"
+        )
+        if character_image:
+            show_image_preview(character_image, "角色图片预览", "character_preview")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # 姿势参考图上传
-    st.markdown('<div class="upload-container">', unsafe_allow_html=True)
-    st.markdown("**🤸 姿势参考图**")
-    reference_image = st.file_uploader(
-        "选择姿势参考图",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=False,
-        help="选择作为姿势参考的图片",
-        key=f"reference_uploader_{st.session_state.file_uploader_key}"
-    )
-    if reference_image:
-        show_image_preview(reference_image, "参考图预览", "reference_preview")
-    st.markdown('</div>', unsafe_allow_html=True)
+        # 姿势参考图上传 - 添加 pose_reference_ 前缀
+        st.markdown('<div class="upload-container">', unsafe_allow_html=True)
+        st.markdown("**🤸 姿势参考图**")
+        reference_image = st.file_uploader(
+            "选择姿势参考图",
+            type=['png', 'jpg', 'jpeg', 'webp'],
+            accept_multiple_files=False,
+            help="选择作为姿势参考的图片",
+            key=f"pose_reference_{st.session_state.file_uploader_key}"
+        )
+        if reference_image:
+            show_image_preview(reference_image, "参考图预览", "reference_preview")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # 开始处理按钮
-    if st.button("🚀 开始处理", use_container_width=True, type="primary"):
-        if character_image and reference_image:
-            with st.spinner('添加任务到队列...'):
-                st.session_state.task_counter += 1
-                task = TaskItem(
-                    st.session_state.task_counter, 
-                    "pose",
-                    get_session_key(),
-                    character_image_data=character_image.getvalue(),
-                    character_image_name=character_image.name,
-                    reference_image_data=reference_image.getvalue(),
-                    reference_image_name=reference_image.name
-                )
-                st.session_state.tasks.append(task)
-                st.session_state.task_queue.append(task)
+        # 开始处理按钮 - 添加唯一key
+        if st.button("🚀 开始处理", use_container_width=True, type="primary", key="pose_submit_btn"):
+            if character_image and reference_image:
+                with st.spinner('添加任务到队列...'):
+                    st.session_state.task_counter += 1
+                    task = TaskItem(
+                        st.session_state.task_counter, 
+                        "pose",
+                        get_session_key(),
+                        character_image_data=character_image.getvalue(),
+                        character_image_name=character_image.name,
+                        reference_image_data=reference_image.getvalue(),
+                        reference_image_name=reference_image.name
+                    )
+                    st.session_state.tasks.append(task)
+                    st.session_state.task_queue.append(task)
 
-            st.session_state.upload_success = True
-            st.session_state.file_uploader_key += 1
-            st.rerun()
-        else:
-            st.error("❌ 请同时上传角色图片和姿势参考图！")
+                st.session_state.upload_success = True
+                st.session_state.file_uploader_key += 1
+                st.rerun()
+            else:
+                st.error("❌ 请同时上传角色图片和姿势参考图！")
 
 def render_enhance_interface():
-    """图像优化界面"""
-    st.markdown("### 🎨 图像优化")
-    st.info("💡 支持批量上传，自动加入处理队列")
+    """图像优化界面 - 使用唯一的key前缀"""
+    with st.container():
+        st.markdown("### 🎨 图像优化")
+        st.info("💡 支持批量上传，自动加入处理队列")
 
-    if st.session_state.upload_success:
-        st.success("✅ 文件已添加到处理队列!")
-        st.session_state.upload_success = False
+        if st.session_state.upload_success:
+            st.success("✅ 文件已添加到处理队列!")
+            st.session_state.upload_success = False
 
-    uploaded_files = st.file_uploader(
-        "选择图片文件",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=True,
-        help="支持批量上传，自动加入处理队列",
-        key=f"uploader_{st.session_state.file_uploader_key}"
-    )
+        # 文件上传器 - 添加 enhance_uploader_ 前缀
+        uploaded_files = st.file_uploader(
+            "选择图片文件",
+            type=['png', 'jpg', 'jpeg', 'webp'],
+            accept_multiple_files=True,
+            help="支持批量上传，自动加入处理队列",
+            key=f"enhance_uploader_{st.session_state.file_uploader_key}"
+        )
 
-    if uploaded_files:
-        with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
-            for file in uploaded_files:
-                st.session_state.task_counter += 1
-                task = TaskItem(
-                    st.session_state.task_counter,
-                    "enhance",
-                    get_session_key(),
-                    file_data=file.getvalue(),
-                    file_name=file.name
-                )
-                st.session_state.tasks.append(task)
-                st.session_state.task_queue.append(task)
+        if uploaded_files:
+            with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
+                for file in uploaded_files:
+                    st.session_state.task_counter += 1
+                    task = TaskItem(
+                        st.session_state.task_counter,
+                        "enhance",
+                        get_session_key(),
+                        file_data=file.getvalue(),
+                        file_name=file.name
+                    )
+                    st.session_state.tasks.append(task)
+                    st.session_state.task_queue.append(task)
 
-            st.session_state.upload_success = True
-            st.session_state.file_uploader_key += 1
-            st.rerun()
+                st.session_state.upload_success = True
+                st.session_state.file_uploader_key += 1
+                st.rerun()
 
-# --- 11. 主界面 ---
+# --- 11. 主界面（修改后 - 添加功能切换时的key重置）---
 def main():
-    # 侧边栏功能选择
+    # 侧边栏功能选择 - 添加切换时的key重置逻辑
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
         
@@ -731,8 +734,10 @@ def main():
             use_container_width=True,
             type="primary" if st.session_state.selected_function == "姿态迁移" else "secondary"
         )
-        if pose_selected:
+        if pose_selected and st.session_state.selected_function != "姿态迁移":
             st.session_state.selected_function = "姿态迁移"
+            st.session_state.file_uploader_key += 1  # 重置key以清理UI
+            st.session_state.upload_success = False  # 清理成功提示
             st.rerun()
         
         st.caption("角色图片 + 姿势参考图")
@@ -743,8 +748,10 @@ def main():
             use_container_width=True,
             type="primary" if st.session_state.selected_function == "图像优化" else "secondary"
         )
-        if enhance_selected:
+        if enhance_selected and st.session_state.selected_function != "图像优化":
             st.session_state.selected_function = "图像优化"
+            st.session_state.file_uploader_key += 1  # 重置key以清理UI
+            st.session_state.upload_success = False  # 清理成功提示
             st.rerun()
         
         st.caption("单图片智能优化")
