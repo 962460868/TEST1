@@ -9,6 +9,7 @@ import logging
 import streamlit.components.v1 as components
 
 # --- 1. 页面配置和全局设置 ---
+
 st.set_page_config(
     page_title="RunningHub AI - 智能图片处理工具",
     page_icon="🎨",
@@ -20,6 +21,11 @@ st.set_page_config(
 logging.getLogger("tornado.access").setLevel(logging.ERROR)
 logging.getLogger("tornado.application").setLevel(logging.ERROR)
 logging.getLogger("tornado.general").setLevel(logging.ERROR)
+
+# --- 功能名称常量 ---
+POSE_FUNCTION = "姿态迁移"
+ENHANCE_FUNCTION = "图像优化"
+LIGHTING_FUNCTION = "溶图打光" # 新增功能名称
 
 # API配置 - 姿态迁移
 POSE_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
@@ -36,6 +42,13 @@ ENHANCE_NODE_INFO = [
     {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"},
     {"nodeId": "60", "fieldName": "text", "fieldValue": "8k, high quality, high detail", "description": "正向提示词补充"},
     {"nodeId": "4", "fieldName": "text", "fieldValue": "色调艳丽,过曝,静态,细节模糊不清,字幕,风格,作品,画作,画面,静止,整体发灰,最差质量,低质量,JPEG压缩残留,丑陋的,残缺的,多余的手指,画得不好的手部,画得不好的脸部,畸形的,毁容的,形态畸形的肢体,手指融合,静止不动的画面,悲乱的背景,三条腿,背景人很多,倒着走", "description": "反向提示词"}
+]
+
+# API配置 - 溶图打光 (新增)
+LIGHTING_API_KEY = POSE_API_KEY # 沿用姿态迁移的API Key
+LIGHTING_WEBAPP_ID = "1985718229576425473"
+LIGHTING_NODE_INFO = [
+    {"nodeId": "437", "fieldName": "image", "fieldValue": "placeholder.png", "description": "image"}
 ]
 
 # 系统配置 - 全局并发限制
@@ -59,11 +72,12 @@ CONCURRENT_LIMIT_ERRORS = [
     "concurrent limit", "too many requests", "rate limit",
     "队列已满", "并发限制", "服务忙碌", "CONCURRENT_LIMIT_EXCEEDED", "TOO_MANY_REQUESTS"
 ]
+
 TIMEOUT_ERRORS = [
     "read timed out", "connection timeout", "timeout", "timed out"
 ]
 
-# --- 2. CSS样式 ---
+# --- 2. CSS样式 (新增溶图打光的任务卡片样式) ---
 st.markdown("""
 <style>
     .main { background-color: #f8f9fa; }
@@ -82,6 +96,7 @@ st.markdown("""
     }
     .pose-task-card { border-left: 4px solid #28a745; }
     .enhance-task-card { border-left: 4px solid #fd7e14; }
+    .lighting-task-card { border-left: 4px solid #6f42c1; } /* 新增溶图打光卡片样式 */
     .success-badge { color: #28a745; font-weight: 600; }
     .error-badge { color: #dc3545; font-weight: 600; }
     .processing-badge { color: #fd7e14; font-weight: 600; }
@@ -109,8 +124,8 @@ st.markdown("""
         background: #f8f9fa;
     }
     
-    /* 姿态迁移使用简洁样式（无虚线框） */
-    .pose-upload-section {
+    /* 姿态迁移/溶图打光使用简洁样式（无虚线框） */
+    .pose-upload-section, .lighting-upload-section { /* 新增溶图打光上传样式 */
         background: white;
         border: 1px solid #e9ecef;
         border-radius: 8px;
@@ -147,6 +162,7 @@ st.markdown("""
         margin: 5px 0;
         font-style: italic;
     }
+
     /* 功能选择样式 */
     .function-selector {
         background: white;
@@ -176,6 +192,7 @@ st.markdown("""
         background: #f8f9ff;
         box-shadow: 0 2px 8px rgba(0,102,204,0.15);
     }
+
     /* 文件信息显示样式 */
     .file-info {
         background: #f8f9fa;
@@ -222,35 +239,38 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. Session State管理 ---
-
 def get_session_key():
     if 'session_id' not in st.session_state:
         st.session_state.session_id = f"s_{int(time.time())}_{random.randint(100, 999)}"
     return st.session_state.session_id
 
-# --- 新增/修复: 延迟清空机制 ---
-def clear_pose_uploads_delayed():
-    """延迟清空姿态迁移的上传文件，避免UI残留"""
-    st.session_state.need_pose_clear = True
+def clear_ui_state():
+    """简化的UI状态清理，避免与Streamlit内部状态冲突"""
+    # 仅增加key值来重置上传器，不删除其他session state
+    st.session_state.file_uploader_key += 1
+    st.session_state.upload_success = False
+    # 设置延迟清空标记
+    st.session_state.need_ui_refresh = True
+
+def clear_uploads_delayed():
+    """延迟清空姿态迁移/溶图打光的上传文件，避免UI残留"""
+    # 标记需要清空，但不立即执行
+    st.session_state.need_clear = True # 通用清空标记
     st.session_state.clear_message = "已清空上传的图片!"
 
 def handle_delayed_clear():
     """处理延迟清空操作"""
-    if st.session_state.get('need_pose_clear', False):
+    if st.session_state.get('need_clear', False):
         st.session_state.file_uploader_key += 1
-        st.session_state.need_pose_clear = False
-        # 注意：不要在这里清空 clear_message，让它在主渲染循环中显示一次后被清除
-
-# --- 修复: 简化版UI状态清理，主要针对图像优化 ---
-def clear_ui_state():
-    """简化的UI状态清理，避免与Streamlit内部状态冲突"""
-    st.session_state.file_uploader_key += 1
-    st.session_state.upload_success = False
-    st.session_state.need_ui_refresh = True # 保留此标记以备将来扩展
+        st.session_state.need_clear = False
+        # 清空消息将在下次刷新时显示
+        
+    if st.session_state.get('need_ui_refresh', False):
+        st.session_state.need_ui_refresh = False
 
 # 初始化Session State
 if 'selected_function' not in st.session_state:
-    st.session_state.selected_function = "姿态迁移"
+    st.session_state.selected_function = LIGHTING_FUNCTION # 默认改为新增功能
 if 'tasks' not in st.session_state:
     st.session_state.tasks = []
 if 'task_counter' not in st.session_state:
@@ -263,10 +283,8 @@ if 'download_clicked' not in st.session_state:
     st.session_state.download_clicked = {}
 if 'task_queue' not in st.session_state:
     st.session_state.task_queue = []
-
-# --- 新增/修复: 延迟清空相关状态 ---
-if 'need_pose_clear' not in st.session_state:
-    st.session_state.need_pose_clear = False
+if 'need_clear' not in st.session_state:
+    st.session_state.need_clear = False
 if 'clear_message' not in st.session_state:
     st.session_state.clear_message = ""
 if 'need_ui_refresh' not in st.session_state:
@@ -276,19 +294,19 @@ if 'need_ui_refresh' not in st.session_state:
 class TaskItem:
     def __init__(self, task_id, task_type, session_id, **kwargs):
         self.task_id = task_id
-        self.task_type = task_type  # "pose" 或 "enhance"
+        self.task_type = task_type  # "pose", "enhance", 或 "lighting" (新增)
         self.session_id = session_id
         
         # 姿态迁移专用属性
-        if task_type == "pose":
+        if task_type == POSE_FUNCTION:
             self.character_image_data = kwargs.get('character_image_data')
             self.character_image_name = kwargs.get('character_image_name')
             self.reference_image_data = kwargs.get('reference_image_data')
             self.reference_image_name = kwargs.get('reference_image_name')
             self.result_data_list = []
         
-        # 图像优化专用属性
-        elif task_type == "enhance":
+        # 图像优化/溶图打光 专用属性 (单文件)
+        elif task_type == ENHANCE_FUNCTION or task_type == LIGHTING_FUNCTION:
             self.file_data = kwargs.get('file_data')
             self.file_name = kwargs.get('file_name')
             self.result_data = None
@@ -304,7 +322,7 @@ class TaskItem:
         self.retry_count = 0
         self.timeout_count = 0
 
-# --- 5. 核心API函数 ---
+# --- 5. 核心API函数 (保持不变) ---
 def is_concurrent_limit_error(error_msg):
     error_lower = error_msg.lower()
     return any(keyword in error_lower for keyword in CONCURRENT_LIMIT_ERRORS)
@@ -390,7 +408,7 @@ def fetch_task_outputs(api_key, task_id, task_type="pose"):
         data = response.json()
         
         if data.get("code") == 0 and data.get("data"):
-            if task_type == "pose":
+            if task_type == POSE_FUNCTION:
                 # 姿态迁移 - 支持多个输出
                 file_urls = []
                 for output_item in data["data"]:
@@ -400,7 +418,7 @@ def fetch_task_outputs(api_key, task_id, task_type="pose"):
                 if file_urls:
                     return file_urls
             else:
-                # 图像优化 - 单个输出
+                # 图像优化/溶图打光 - 单个输出
                 file_url = data["data"][0].get("fileUrl")
                 if file_url:
                     return file_url
@@ -418,21 +436,24 @@ def download_result_image(url):
     except requests.exceptions.Timeout:
         raise Exception("下载图片超时")
 
-# --- 6. 任务处理逻辑 ---
+# --- 6. 任务处理逻辑 (新增溶图打光处理函数) ---
 def process_pose_task(task):
     """处理姿态迁移任务"""
     api_key = POSE_API_KEY
     webapp_id = POSE_WEBAPP_ID
     node_info = POSE_NODE_INFO
+
     try:
         # 上传角色图片
         task.progress = 10
         character_uploaded_filename = upload_file_with_retry(
             task.character_image_data, task.character_image_name, api_key)
+
         # 上传姿势参考图
         task.progress = 20
         reference_uploaded_filename = upload_file_with_retry(
             task.reference_image_data, task.reference_image_name, api_key)
+
         # 构建节点信息
         task.progress = 25
         node_info_list = copy.deepcopy(node_info)
@@ -441,8 +462,10 @@ def process_pose_task(task):
                 node["fieldValue"] = character_uploaded_filename
             elif node["nodeId"] == "244":  # 姿势参考图
                 node["fieldValue"] = reference_uploaded_filename
+
         task.progress = 35
         task.api_task_id = run_task_with_retry(api_key, webapp_id, node_info_list)
+
         # 轮询状态
         poll_count = 0
         consecutive_timeouts = 0
@@ -450,8 +473,10 @@ def process_pose_task(task):
         while poll_count < MAX_POLL_COUNT:
             time.sleep(POLL_INTERVAL)
             poll_count += 1
+
             status = get_task_status(api_key, task.api_task_id)
             task.progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
+
             if status == "SUCCESS":
                 break
             elif status == "FAILED":
@@ -463,11 +488,13 @@ def process_pose_task(task):
                     consecutive_timeouts = 0
             else:
                 consecutive_timeouts = 0
+
         if poll_count >= MAX_POLL_COUNT:
             raise Exception(f"任务处理超时 (>{ACTUAL_TIMEOUT_MINUTES}分钟)")
+
         # 获取多个结果
         task.progress = 95
-        result_urls = fetch_task_outputs(api_key, task.api_task_id, "pose")
+        result_urls = fetch_task_outputs(api_key, task.api_task_id, POSE_FUNCTION)
         
         # 下载所有结果图片
         task.result_data_list = []
@@ -478,8 +505,10 @@ def process_pose_task(task):
                 'filename': f"pose_result_{i+1}_{task.character_image_name}",
                 'url': url
             })
+
         task.progress = 100
         task.status = "SUCCESS"
+
     except Exception as e:
         handle_task_error(task, e)
 
@@ -488,42 +517,99 @@ def process_enhance_task(task):
     api_key = ENHANCE_API_KEY
     webapp_id = ENHANCE_WEBAPP_ID
     node_info = ENHANCE_NODE_INFO
+
     try:
         task.progress = 15
         uploaded_filename = upload_file_with_retry(task.file_data, task.file_name, api_key)
+
         task.progress = 25
         node_info_list = copy.deepcopy(node_info)
         for node in node_info_list:
             if node["nodeId"] == "38":
                 node["fieldValue"] = uploaded_filename
+
         task.progress = 35
         task.api_task_id = run_task_with_retry(api_key, webapp_id, node_info_list)
+
         poll_count = 0
         while poll_count < MAX_POLL_COUNT:
             time.sleep(POLL_INTERVAL)
             poll_count += 1
+
             status = get_task_status(api_key, task.api_task_id)
             task.progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
+
             if status == "SUCCESS":
                 break
             elif status == "FAILED":
                 raise Exception("API任务处理失败")
+
         if poll_count >= MAX_POLL_COUNT:
             raise Exception(f"任务超时 (>{ACTUAL_TIMEOUT_MINUTES}分钟)")
+
         task.progress = 95
-        result_url = fetch_task_outputs(api_key, task.api_task_id, "enhance")
+        result_url = fetch_task_outputs(api_key, task.api_task_id, ENHANCE_FUNCTION)
         task.result_data = download_result_image(result_url)
+
         task.progress = 100
         task.status = "SUCCESS"
+
     except Exception as e:
         handle_task_error(task, e)
 
+def process_lighting_task(task):
+    """处理溶图打光任务 (新增)"""
+    api_key = LIGHTING_API_KEY
+    webapp_id = LIGHTING_WEBAPP_ID
+    node_info = LIGHTING_NODE_INFO
+
+    try:
+        task.progress = 15
+        uploaded_filename = upload_file_with_retry(task.file_data, task.file_name, api_key)
+
+        task.progress = 25
+        node_info_list = copy.deepcopy(node_info)
+        for node in node_info_list:
+            if node["nodeId"] == "437": # 溶图打光节点的ID
+                node["fieldValue"] = uploaded_filename
+
+        task.progress = 35
+        task.api_task_id = run_task_with_retry(api_key, webapp_id, node_info_list)
+
+        poll_count = 0
+        while poll_count < MAX_POLL_COUNT:
+            time.sleep(POLL_INTERVAL)
+            poll_count += 1
+
+            status = get_task_status(api_key, task.api_task_id)
+            task.progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
+
+            if status == "SUCCESS":
+                break
+            elif status == "FAILED":
+                raise Exception("API任务处理失败")
+
+        if poll_count >= MAX_POLL_COUNT:
+            raise Exception(f"任务超时 (>{ACTUAL_TIMEOUT_MINUTES}分钟)")
+
+        task.progress = 95
+        result_url = fetch_task_outputs(api_key, task.api_task_id, LIGHTING_FUNCTION)
+        task.result_data = download_result_image(result_url)
+
+        task.progress = 100
+        task.status = "SUCCESS"
+
+    except Exception as e:
+        handle_task_error(task, e)
+        
 def handle_task_error(task, error):
     """统一处理任务错误"""
     error_msg = str(error)
     task.elapsed_time = time.time() - task.start_time if task.start_time else 0
+
     is_timeout = is_timeout_error(error_msg)
     is_concurrent = is_concurrent_limit_error(error_msg)
+
     if is_timeout:
         task.timeout_count += 1
         
@@ -547,24 +633,28 @@ def process_single_task(task):
     """处理单个任务的统一入口"""
     task.status = "PROCESSING"
     task.start_time = time.time()
-    if task.task_type == "pose":
+
+    if task.task_type == POSE_FUNCTION:
         process_pose_task(task)
-    elif task.task_type == "enhance":
+    elif task.task_type == ENHANCE_FUNCTION:
         process_enhance_task(task)
+    elif task.task_type == LIGHTING_FUNCTION: # 新增
+        process_lighting_task(task)
     
     if task.status == "SUCCESS":
         task.elapsed_time = time.time() - task.start_time
 
-# --- 7. 队列管理 ---
+# --- 7. 队列管理 (更新统计和启动逻辑) ---
 def get_stats():
     processing_count = sum(1 for t in st.session_state.tasks if t.status == "PROCESSING")
     queued_count = len(st.session_state.task_queue) + sum(1 for t in st.session_state.tasks if t.status == "QUEUED")
     success_count = sum(1 for t in st.session_state.tasks if t.status == "SUCCESS")
     failed_count = sum(1 for t in st.session_state.tasks if t.status == "FAILED")
     
-    # 分类统计
-    pose_count = sum(1 for t in st.session_state.tasks if t.task_type == "pose")
-    enhance_count = sum(1 for t in st.session_state.tasks if t.task_type == "enhance")
+    # 分类统计 (更新)
+    pose_count = sum(1 for t in st.session_state.tasks if t.task_type == POSE_FUNCTION)
+    enhance_count = sum(1 for t in st.session_state.tasks if t.task_type == ENHANCE_FUNCTION)
+    lighting_count = sum(1 for t in st.session_state.tasks if t.task_type == LIGHTING_FUNCTION) # 新增
     
     return {
         'processing': processing_count,
@@ -573,7 +663,8 @@ def get_stats():
         'failed': failed_count,
         'total': len(st.session_state.tasks),
         'pose': pose_count,
-        'enhance': enhance_count
+        'enhance': enhance_count,
+        'lighting': lighting_count # 新增
     }
 
 def start_new_tasks():
@@ -661,7 +752,7 @@ def show_file_info(image_file, file_type="image"):
 # --- 9. 下载按钮组件 ---
 def create_download_buttons(task):
     """创建下载按钮"""
-    if task.task_type == "pose" and task.result_data_list:
+    if task.task_type == POSE_FUNCTION and task.result_data_list:
         st.markdown("### 📥 下载结果")
         
         if len(task.result_data_list) == 1:
@@ -693,32 +784,105 @@ def create_download_buttons(task):
                         use_container_width=True
                     )
     
-    elif task.task_type == "enhance" and task.result_data:
+    elif (task.task_type == ENHANCE_FUNCTION or task.task_type == LIGHTING_FUNCTION) and task.result_data:
         file_size = len(task.result_data) / 1024
         
+        download_label = f"📥 下载结果 ({file_size:.1f}KB)"
+        download_filename = f"lighting_result_{task.file_name}" if task.task_type == LIGHTING_FUNCTION else f"optimized_{task.file_name}"
+
         st.download_button(
-            label=f"📥 下载优化结果 ({file_size:.1f}KB)",
+            label=download_label,
             data=task.result_data,
-            file_name=f"optimized_{task.file_name}",
+            file_name=download_filename,
             mime="image/png",
             key=f"download_{task.task_id}",
             use_container_width=True
         )
 
-# --- 10. 功能界面 ---
+# --- 10. 功能界面 (新增溶图打光界面) ---
+def render_lighting_interface():
+    """溶图打光界面 (新增)"""
+    st.markdown("### ✨ 溶图打光")
+    st.info("💡 上传单张图片，进行智能打光处理")
+
+    # 显示任务成功和清空成功的消息
+    if st.session_state.upload_success:
+        st.success("✅ 任务已添加到处理队列!")
+        st.session_state.upload_success = False
+
+    if st.session_state.clear_message:
+        st.markdown(f'<div class="clear-success">✅ {st.session_state.clear_message}</div>', unsafe_allow_html=True)
+        st.session_state.clear_message = ""
+
+    # 图片上传（使用简洁样式，移除虚线框）
+    st.markdown('<div class="lighting-upload-section">', unsafe_allow_html=True)
+    st.markdown("**🖼️ 上传图片**")
+    uploaded_image = st.file_uploader(
+        "选择需要溶图打光的图片",
+        type=['png', 'jpg', 'jpeg', 'webp'],
+        accept_multiple_files=False,
+        help="选择一张图片进行溶图打光处理",
+        key=f"lighting_uploader_{st.session_state.file_uploader_key}"
+    )
+    
+    # 显示文件信息（不显示图片预览）
+    if uploaded_image:
+        show_file_info(uploaded_image, "lighting")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 按钮区域 - 开始处理和清空图片按钮并排
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        start_processing = st.button("🚀 开始处理", use_container_width=True, type="primary")
+    
+    with col2:
+        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # 处理按钮事件
+    if clear_images:
+        clear_uploads_delayed()  # 使用延迟清空策略
+        st.rerun()
+    
+    if start_processing:
+        if uploaded_image:
+            with st.spinner('添加任务到队列...'):
+                st.session_state.task_counter += 1
+                task = TaskItem(
+                    st.session_state.task_counter, 
+                    LIGHTING_FUNCTION,
+                    get_session_key(),
+                    file_data=uploaded_image.getvalue(),
+                    file_name=uploaded_image.name
+                )
+                st.session_state.tasks.append(task)
+                st.session_state.task_queue.append(task)
+
+            # 使用延迟清空策略：先标记成功，延迟清空UI
+            st.session_state.upload_success = True
+            # 延迟清空文件上传器
+            clear_uploads_delayed()
+            st.rerun()
+        else:
+            st.error("❌ 请上传一张图片进行处理！")
+
+
 def render_pose_interface():
     """姿态迁移界面（使用延迟清空策略）"""
     st.markdown("### 🤸 姿态迁移")
     st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
-    
-    # --- 修复: 显示任务成功和清空成功的消息 ---
+
+    # 显示任务成功和清空成功的消息
     if st.session_state.upload_success:
         st.success("✅ 任务已添加到处理队列!")
         st.session_state.upload_success = False
-    # --- 新增/修复: 显示延迟清空成功消息 ---
+
     if st.session_state.clear_message:
         st.markdown(f'<div class="clear-success">✅ {st.session_state.clear_message}</div>', unsafe_allow_html=True)
-        st.session_state.clear_message = "" # 显示后立即清空
+        st.session_state.clear_message = ""
 
     # 角色图片上传（使用简洁样式，移除虚线框）
     st.markdown('<div class="pose-upload-section">', unsafe_allow_html=True)
@@ -765,19 +929,18 @@ def render_pose_interface():
         clear_images = st.button("🗑️ 清空图片", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 修复: 处理按钮事件 ---
+    # 处理按钮事件
     if clear_images:
-        # --- 关键修复: 使用延迟清空而非直接修改 key ---
-        clear_pose_uploads_delayed() 
+        clear_uploads_delayed()  # 使用延迟清空策略
         st.rerun()
-
+    
     if start_processing:
         if character_image and reference_image:
             with st.spinner('添加任务到队列...'):
                 st.session_state.task_counter += 1
                 task = TaskItem(
                     st.session_state.task_counter, 
-                    "pose",
+                    POSE_FUNCTION,
                     get_session_key(),
                     character_image_data=character_image.getvalue(),
                     character_image_name=character_image.name,
@@ -786,11 +949,11 @@ def render_pose_interface():
                 )
                 st.session_state.tasks.append(task)
                 st.session_state.task_queue.append(task)
-            
-            # --- 修复: 使用延迟清空策略：先标记成功，延迟清空UI ---
+
+            # 使用延迟清空策略：先标记成功，延迟清空UI
             st.session_state.upload_success = True
-            # --- 关键修复: 延迟清空文件上传器 ---
-            clear_pose_uploads_delayed()
+            # 延迟清空文件上传器
+            clear_uploads_delayed()
             st.rerun()
         else:
             st.error("❌ 请同时上传角色图片和姿势参考图！")
@@ -799,6 +962,7 @@ def render_enhance_interface():
     """图像优化界面（保留预览功能和虚线框）"""
     st.markdown("### 🎨 图像优化")
     st.info("💡 支持批量上传，自动加入处理队列")
+
     if st.session_state.upload_success:
         st.success("✅ 文件已添加到处理队列!")
         st.session_state.upload_success = False
@@ -831,113 +995,263 @@ def render_enhance_interface():
                 st.session_state.task_counter += 1
                 task = TaskItem(
                     st.session_state.task_counter,
-                    "enhance",
+                    ENHANCE_FUNCTION,
                     get_session_key(),
                     file_data=file.getvalue(),
                     file_name=file.name
                 )
                 st.session_state.tasks.append(task)
                 st.session_state.task_queue.append(task)
+
             st.session_state.upload_success = True
-            # 图像优化可以使用简化清空
-            clear_ui_state() 
+            st.session_state.file_uploader_key += 1
             st.rerun()
 
-# --- 11. 主应用逻辑 ---
+# --- 11. 主界面 (更新侧边栏和任务列表渲染逻辑) ---
 def main():
-    # --- 新增/修复: 在主循环开始时处理延迟清空 ---
+    # 处理延迟清空操作
     handle_delayed_clear()
 
-    st.title("🎨 RunningHub AI - 智能图片处理工具")
-    
-    # 功能选择
-    st.markdown('<div class="function-selector">', unsafe_allow_html=True)
-    selected_function = st.radio(
-        "选择功能",
-        ("姿态迁移", "图像优化"),
-        index=0 if st.session_state.selected_function == "姿态迁移" else 1,
-        horizontal=True,
-        key="function_radio"
-    )
-    st.session_state.selected_function = selected_function
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 显示对应的功能界面
-    if selected_function == "姿态迁移":
-        render_pose_interface()
-    else:
-        render_enhance_interface()
-
-    # 实时任务列表和统计
+    # 侧边栏功能选择
     with st.sidebar:
-        st.header("📊 实时状态")
-        stats = get_stats()
-        col1, col2 = st.columns(2)
-        col1.metric("🟢 处理中", stats['processing'])
-        col2.metric("🟡 排队中", stats['queued'])
+        st.markdown("## 🎨 功能选择")
+        
+        # 溶图打光选项 (新增，并放在最前面)
+        lighting_selected = st.button(
+            "✨ 溶图打光", 
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == LIGHTING_FUNCTION else "secondary"
+        )
+        if lighting_selected and st.session_state.selected_function != LIGHTING_FUNCTION:
+            st.session_state.selected_function = LIGHTING_FUNCTION
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+        
+        st.caption("单图片智能打光")
+
+        # 姿态迁移选项
+        pose_selected = st.button(
+            "🤸 姿态迁移", 
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == POSE_FUNCTION else "secondary"
+        )
+        if pose_selected and st.session_state.selected_function != POSE_FUNCTION:
+            st.session_state.selected_function = POSE_FUNCTION
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+        
+        st.caption("角色图片 + 姿势参考图")
+        
+        # 图像优化选项
+        enhance_selected = st.button(
+            "🎨 图像优化", 
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == ENHANCE_FUNCTION else "secondary"
+        )
+        if enhance_selected and st.session_state.selected_function != ENHANCE_FUNCTION:
+            st.session_state.selected_function = ENHANCE_FUNCTION
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+        
+        st.caption("单/批量图片智能优化")
+        
         st.divider()
-        st.subheader("📈 任务概览")
-        st.write(f"✅ 成功: {stats['success']}")
-        st.write(f"❌ 失败: {stats['failed']}")
-        st.write(f"📊 总计: {stats['total']}")
+        
+        # 状态面板
+        st.markdown("### 📊 系统状态")
+        stats = get_stats()
+        
+        st.metric("处理中", f"{stats['processing']}/{MAX_CONCURRENT}")
+        st.metric("队列中", stats['queued'])
+        st.metric("已完成", stats['success'])
+        st.metric("失败", stats['failed'])
+        
+        st.divider()
+        
+        st.markdown("### 📈 分类统计")
+        st.metric("溶图打光", stats['lighting']) # 新增
+        st.metric("姿态迁移", stats['pose'])
+        st.metric("图像优化", stats['enhance'])
+        
+        st.divider()
+        st.caption(f"💡 全局并发限制: {MAX_CONCURRENT}")
+        st.caption(f"🔄 自动刷新: {AUTO_REFRESH_INTERVAL}秒")
+        st.caption("✅ 已支持溶图打光功能")
 
-        # 实时任务列表
-        if st.session_state.tasks:
+    # 主标题
+    st.title("🎨 RunningHub AI - 智能图片处理工具")
+    st.caption(f"当前模式: **{st.session_state.selected_function}** • 全局并发限制: {MAX_CONCURRENT}")
+    
+    # 显示功能状态
+    if st.session_state.selected_function == POSE_FUNCTION:
+        st.info("ℹ️ 姿态迁移：延迟清空策略 + 简洁样式 + 清空按钮")
+    elif st.session_state.selected_function == ENHANCE_FUNCTION:
+        st.info("ℹ️ 图像优化：即时清空策略 + 虚线框 + 预览")
+    elif st.session_state.selected_function == LIGHTING_FUNCTION: # 新增
+        st.info("ℹ️ 溶图打光：延迟清空策略 + 简洁样式 + 清空按钮")
+    
+    st.divider()
+
+    # 主界面布局
+    left_col, right_col = st.columns([1.8, 3.2])
+
+    # 左侧：功能界面
+    with left_col:
+        if st.session_state.selected_function == POSE_FUNCTION:
+            render_pose_interface()
+        elif st.session_state.selected_function == ENHANCE_FUNCTION:
+            render_enhance_interface()
+        elif st.session_state.selected_function == LIGHTING_FUNCTION: # 新增
+            render_lighting_interface()
+
+
+    # 右侧：任务列表
+    with right_col:
+        st.markdown("### 📋 任务列表")
+
+        if not st.session_state.tasks:
+            st.info("💡 暂无任务，请选择功能并上传文件开始处理")
+        else:
+            start_new_tasks()
+
+            # 显示任务
+            for task in reversed(st.session_state.tasks):
+                with st.container():
+                    # 根据任务类型选择卡片样式 (更新)
+                    if task.task_type == POSE_FUNCTION:
+                        task_card_class = "pose-task-card"
+                    elif task.task_type == ENHANCE_FUNCTION:
+                        task_card_class = "enhance-task-card"
+                    else: # LIGHTING_FUNCTION
+                        task_card_class = "lighting-task-card"
+
+                    st.markdown(f'<div class="task-card {task_card_class}">', unsafe_allow_html=True)
+
+                    # 任务头部
+                    col1, col2 = st.columns([4, 1])
+
+                    with col1:
+                        if task.task_type == POSE_FUNCTION:
+                            task_type_icon = "🤸"
+                            task_type_name = "姿态迁移"
+                            st.markdown(f"**{task_type_icon} {task_type_name}** `#{task.task_id}`")
+                            st.markdown(f'<div class="compact-info">👤 角色: {task.character_image_name}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="compact-info">🤸 参考: {task.reference_image_name}</div>', unsafe_allow_html=True)
+                        elif task.task_type == ENHANCE_FUNCTION:
+                            task_type_icon = "🎨"
+                            st.markdown(f"**{task_type_icon} 图像优化: {task.file_name}** `#{task.task_id}`")
+                        else: # LIGHTING_FUNCTION (新增)
+                            task_type_icon = "✨"
+                            st.markdown(f"**{task_type_icon} 溶图打光: {task.file_name}** `#{task.task_id}`")
+                        
+                        if task.retry_count > 0:
+                            st.markdown(f'<div class="compact-info">🔄 重试 {task.retry_count}/{MAX_RETRIES}</div>', unsafe_allow_html=True)
+                        if task.timeout_count > 0:
+                            st.markdown(f'<div class="compact-info">⏰ 超时 {task.timeout_count}次</div>', unsafe_allow_html=True)
+
+                    with col2:
+                        if task.status == "SUCCESS":
+                            st.markdown('<span class="success-badge">✅ 完成</span>', unsafe_allow_html=True)
+                        elif task.status == "FAILED":
+                            st.markdown('<span class="error-badge">❌ 失败</span>', unsafe_allow_html=True)
+                        elif task.status == "PROCESSING":
+                            st.markdown('<span class="processing-badge">⚡ 处理中</span>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<span class="queued-badge">⏳ 队列中</span>', unsafe_allow_html=True)
+
+                    # 进度显示
+                    if task.status == "PROCESSING":
+                        st.progress(task.progress / 100, text=f"进度: {int(task.progress)}%")
+                        
+                        if task.start_time:
+                            elapsed = time.time() - task.start_time
+                            elapsed_str = f"{int(elapsed//60)}:{int(elapsed%60):02d}"
+                            st.markdown(f'<div class="compact-info real-time">⏱️ 已用时: {elapsed_str}</div>', unsafe_allow_html=True)
+
+                    elif task.status == "QUEUED":
+                        st.markdown('<div class="compact-info">⏳ 等待处理...</div>', unsafe_allow_html=True)
+
+                    # 结果处理
+                    if task.status == "SUCCESS":
+                        elapsed_str = f"{int(task.elapsed_time//60)}:{int(task.elapsed_time%60):02d}"
+                        
+                        if task.task_type == POSE_FUNCTION:
+                            result_count = len(task.result_data_list)
+                            st.success(f"🎉 姿态迁移完成! 用时: {elapsed_str} | 生成了 {result_count} 个结果")
+                        elif task.task_type == ENHANCE_FUNCTION:
+                            st.success(f"🎉 图像优化完成! 用时: {elapsed_str}")
+                        else: # LIGHTING_FUNCTION (新增)
+                            st.success(f"🎉 溶图打光完成! 用时: {elapsed_str}")
+                        
+                        create_download_buttons(task)
+
+                    elif task.status == "FAILED":
+                        st.error(f"💥 处理失败")
+                        if task.error_message:
+                            if is_timeout_error(task.error_message):
+                                st.warning(f"⏰ 超时错误: 已重试 {task.retry_count} 次")
+                            st.markdown(f'<div class="compact-info">❌ 错误: {task.error_message}</div>', unsafe_allow_html=True)
+
+                    st.markdown('</div>', unsafe_allow_html=True)
+
             st.divider()
-            st.subheader("📋 任务列表")
-            # 逆序显示，最新的在上面
-            for task in reversed(st.session_state.tasks[-10:]): # 最多显示最近10个
-                css_class = "task-card"
-                if task.task_type == "pose":
-                    css_class += " pose-task-card"
-                elif task.task_type == "enhance":
-                    css_class += " enhance-task-card"
 
-                st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                
-                task_title = f"任务 #{task.task_id}"
-                if task.task_type == "pose":
-                    task_title += " (姿态迁移)"
-                else:
-                    task_title += " (图像优化)"
+            # 操作按钮
+            col1, col2, col3 = st.columns(3)
 
-                st.markdown(f"**{task_title}**")
-                
-                # 状态徽章
-                status_badge = ""
-                if task.status == "SUCCESS":
-                    status_badge = '<span class="success-badge">✅ 完成</span>'
-                elif task.status == "FAILED":
-                    status_badge = '<span class="error-badge">❌ 失败</span>'
-                elif task.status == "PROCESSING":
-                    status_badge = '<span class="processing-badge">🔄 处理中</span>'
-                elif task.status == "QUEUED":
-                    status_badge = '<span class="queued-badge">🕒 排队中</span>'
-                
-                st.markdown(status_badge, unsafe_allow_html=True)
+            with col1:
+                if st.button("🗑️ 清空所有", use_container_width=True):
+                    st.session_state.tasks = []
+                    st.session_state.task_queue = []
+                    st.session_state.download_clicked = {}
+                    st.rerun()
 
-                # 进度条
-                if task.status in ["QUEUED", "PROCESSING"]:
-                    st.progress(task.progress / 100)
-                    st.caption(f"{task.progress}%")
+            with col2:
+                if st.button("🔄 重启失败", use_container_width=True):
+                    failed_tasks = [t for t in st.session_state.tasks if t.status == "FAILED"]
+                    for task in failed_tasks:
+                        task.status = "QUEUED"
+                        task.retry_count = 0
+                        task.timeout_count = 0
+                        task.error_message = None
+                        task.progress = 0
+                        st.session_state.task_queue.append(task)
+                    if failed_tasks:
+                        st.success(f"✅ 已重启 {len(failed_tasks)} 个失败任务")
+                    else:
+                        st.info("ℹ️ 没有失败的任务需要重启")
+                    st.rerun()
+            
+            with col3:
+                if st.button("🔄 强制刷新", use_container_width=True):
+                    st.rerun()
 
-                # 时间和错误信息
-                if task.status == "SUCCESS":
-                    elapsed_str = f"{task.elapsed_time:.1f}s" if task.elapsed_time else "N/A"
-                    st.markdown(f'<p class="compact-info">⏱️ 耗时: {elapsed_str}</p>', unsafe_allow_html=True)
-                    
-                if task.status == "FAILED":
-                    st.markdown(f'<p class="compact-info">❗ 错误: {task.error_message}</p>', unsafe_allow_html=True)
-                
-                # 下载按钮
-                if task.status == "SUCCESS":
-                    create_download_buttons(task)
+    # 页脚
+    st.divider()
+    st.markdown("""
+    <div style='text-align: center; color: #6c757d; padding: 15px;'>
+        <b>🚀 RunningHub AI - 多功能整合版 v3.0 (新增溶图打光)</b><br>
+        <small>溶图打光 (延迟清空) + 姿态迁移 (延迟清空) + 图像优化 (即时清空)</small>
+    </div>
+    """, unsafe_allow_html=True)
 
-                st.markdown("</div>", unsafe_allow_html=True)
-
-    # 自动刷新
-    time.sleep(AUTO_REFRESH_INTERVAL)
-    st.experimental_rerun()
-
+# --- 12. 应用入口 ---
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+
+        # 自动刷新逻辑
+        has_active_tasks = any(t.status in ["PROCESSING", "QUEUED"] for t in st.session_state.tasks) or len(st.session_state.task_queue) > 0
+
+        if has_active_tasks:
+            time.sleep(AUTO_REFRESH_INTERVAL)
+            st.rerun()
+
+    except Exception as e:
+        error_str = str(e).lower()
+        # 过滤掉Streamlit内部的无害错误
+        if not any(kw in error_str for kw in ['websocket', 'tornado', 'streamlit', 'inotify', 'connection broken']):
+            st.error(f"⚠️ 系统错误: {str(e)[:100]}...")
+            st.info("系统将自动恢复...")
+            time.sleep(5)
+        st.rerun()
