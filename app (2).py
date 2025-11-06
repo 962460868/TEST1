@@ -22,7 +22,7 @@ logging.getLogger("tornado.access").setLevel(logging.ERROR)
 logging.getLogger("tornado.application").setLevel(logging.ERROR)
 logging.getLogger("tornado.general").setLevel(logging.ERROR)
 
-# API配置 - 去水印（新增）
+# API配置 - 去水印
 WATERMARK_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
 WATERMARK_WEBAPP_ID = "1986469254155403266"
 WATERMARK_NODE_INFO = [
@@ -44,13 +44,11 @@ POSE_NODE_INFO = [
     {"nodeId": "244", "fieldName": "image", "fieldValue": "placeholder.png", "description": "姿势参考图"}
 ]
 
-# API配置 - 图像优化
-ENHANCE_API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
-ENHANCE_WEBAPP_ID = "1947599512657453057"
+# API配置 - 图像优化（已更新）
+ENHANCE_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
+ENHANCE_WEBAPP_ID = "1986501194824773634"
 ENHANCE_NODE_INFO = [
-    {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"},
-    {"nodeId": "60", "fieldName": "text", "fieldValue": "8k, high quality, high detail", "description": "正向提示词补充"},
-    {"nodeId": "4", "fieldName": "text", "fieldValue": "色调艳丽,过曝,静态,细节模糊不清,字幕,风格,作品,画作,画面,静止,整体发灰,最差质量,低质量,JPEG压缩残留,丑陋的,残缺的,多余的手指,画得不好的手部,画得不好的脸部,畸形的,毁容的,形态畸形的肢体,手指融合,静止不动的画面,悲乱的背景,三条腿,背景人很多,倒着走", "description": "反向提示词"}
+    {"nodeId": "14", "fieldName": "image", "fieldValue": "placeholder.jpg", "description": "image"}
 ]
 
 # 系统配置 - 全局并发限制
@@ -592,7 +590,7 @@ def process_pose_task(task):
         handle_task_error(task, e)
 
 def process_enhance_task(task):
-    """处理图像优化任务"""
+    """处理图像优化任务（已更新API配置）"""
     api_key = ENHANCE_API_KEY
     webapp_id = ENHANCE_WEBAPP_ID
     node_info = ENHANCE_NODE_INFO
@@ -604,7 +602,7 @@ def process_enhance_task(task):
         task.progress = 25
         node_info_list = copy.deepcopy(node_info)
         for node in node_info_list:
-            if node["nodeId"] == "38":
+            if node["nodeId"] == "14":  # 更新为新的 nodeId
                 node["fieldValue"] = uploaded_filename
 
         task.progress = 35
@@ -1203,7 +1201,7 @@ def main():
         st.divider()
         st.caption(f"💡 全局并发限制: {MAX_CONCURRENT}")
         st.caption(f"🔄 自动刷新: {AUTO_REFRESH_INTERVAL}秒")
-        st.caption("✅ 已新增去水印功能")
+        st.caption("✅ 已更新图像优化API")
 
     # 主标题
     st.title("🎨 RunningHub AI - 智能图片处理工具")
@@ -1216,6 +1214,8 @@ def main():
         st.info("ℹ️ 溶图打光：智能光影处理 + 延迟清空策略 + 简洁样式")
     elif st.session_state.selected_function == "姿态迁移":
         st.info("ℹ️ 姿态迁移：延迟清空策略 + 简洁样式 + 清空按钮")
+    elif st.session_state.selected_function == "图像优化":
+        st.info("ℹ️ 图像优化：已更新API配置 + 批量处理 + 预览功能")
     
     st.divider()
 
@@ -1366,7 +1366,7 @@ def main():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 多功能整合版 v4.0 (新增去水印)</b><br>
+        <b>🚀 RunningHub AI - 多功能整合版 v4.1 (已更新图像优化API)</b><br>
         <small>去水印 + 溶图打光 + 姿态迁移 + 图像优化 • 延续延迟清空策略 • 统一UI风格</small>
     </div>
     """, unsafe_allow_html=True)
