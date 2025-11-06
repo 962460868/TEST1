@@ -22,7 +22,14 @@ logging.getLogger("tornado.access").setLevel(logging.ERROR)
 logging.getLogger("tornado.application").setLevel(logging.ERROR)
 logging.getLogger("tornado.general").setLevel(logging.ERROR)
 
-# API配置 - 溶图打光（新增）
+# API配置 - 去水印（新增）
+WATERMARK_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
+WATERMARK_WEBAPP_ID = "1986469254155403266"
+WATERMARK_NODE_INFO = [
+    {"nodeId": "191", "fieldName": "image", "fieldValue": "placeholder.jpg", "description": "image"}
+]
+
+# API配置 - 溶图打光
 LIGHTING_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
 LIGHTING_WEBAPP_ID = "1985718229576425473"
 LIGHTING_NODE_INFO = [
@@ -89,6 +96,7 @@ st.markdown("""
         background: white; border-radius: 8px; padding: 1rem; margin: 0.5rem 0;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #0066cc;
     }
+    .watermark-task-card { border-left: 4px solid #e74c3c; }
     .lighting-task-card { border-left: 4px solid #ff6b35; }
     .pose-task-card { border-left: 4px solid #28a745; }
     .enhance-task-card { border-left: 4px solid #fd7e14; }
@@ -119,8 +127,8 @@ st.markdown("""
         background: #f8f9fa;
     }
     
-    /* 溶图打光和姿态迁移使用简洁样式（无虚线框） */
-    .pose-upload-section, .lighting-upload-section {
+    /* 去水印、溶图打光和姿态迁移使用简洁样式（无虚线框） */
+    .pose-upload-section, .lighting-upload-section, .watermark-upload-section {
         background: white;
         border: 1px solid #e9ecef;
         border-radius: 8px;
@@ -216,7 +224,7 @@ def clear_ui_state():
     st.session_state.need_ui_refresh = True
 
 def clear_single_upload_delayed():
-    """延迟清空单图上传文件，避免UI残留（用于溶图打光和姿态迁移）"""
+    """延迟清空单图上传文件，避免UI残留（用于去水印、溶图打光和姿态迁移）"""
     st.session_state.need_single_clear = True
     st.session_state.clear_message = "已清空上传的图片!"
 
@@ -231,7 +239,7 @@ def handle_delayed_clear():
 
 # 初始化Session State
 if 'selected_function' not in st.session_state:
-    st.session_state.selected_function = "溶图打光"  # 默认选择溶图打光
+    st.session_state.selected_function = "去水印"  # 默认选择去水印
 if 'tasks' not in st.session_state:
     st.session_state.tasks = []
 if 'task_counter' not in st.session_state:
@@ -255,11 +263,17 @@ if 'need_ui_refresh' not in st.session_state:
 class TaskItem:
     def __init__(self, task_id, task_type, session_id, **kwargs):
         self.task_id = task_id
-        self.task_type = task_type  # "lighting", "pose" 或 "enhance"
+        self.task_type = task_type  # "watermark", "lighting", "pose" 或 "enhance"
         self.session_id = session_id
         
+        # 去水印专用属性
+        if task_type == "watermark":
+            self.file_data = kwargs.get('file_data')
+            self.file_name = kwargs.get('file_name')
+            self.result_data = None
+        
         # 溶图打光专用属性
-        if task_type == "lighting":
+        elif task_type == "lighting":
             self.file_data = kwargs.get('file_data')
             self.file_name = kwargs.get('file_name')
             self.result_data = None
@@ -327,7 +341,7 @@ def upload_file_with_retry(file_data, file_name, api_key, max_retries=3):
             else:
                 raise
 
-def run_task_with_retry(api_key, webapp_id, node_info_list, max_retries=3, instance_type="plus"):
+def run_task_with_retry(api_key, webapp_id, node_info_list, max_retries=3, instance_type=None):
     for attempt in range(max_retries):
         try:
             url = 'https://www.runninghub.cn/task/openapi/ai-app/run'
@@ -335,9 +349,12 @@ def run_task_with_retry(api_key, webapp_id, node_info_list, max_retries=3, insta
             payload = {
                 "apiKey": api_key, 
                 "webappId": webapp_id, 
-                "instanceType": instance_type,
                 "nodeInfoList": node_info_list
             }
+            
+            # 只在需要时添加 instanceType
+            if instance_type:
+                payload["instanceType"] = instance_type
             
             response = requests.post(url, headers=headers, json=payload, timeout=RUN_TASK_TIMEOUT)
             response.raise_for_status()
@@ -371,7 +388,7 @@ def get_task_status(api_key, task_id):
     except:
         return "UNKNOWN"
 
-def fetch_task_outputs(api_key, task_id, task_type="lighting"):
+def fetch_task_outputs(api_key, task_id, task_type="watermark"):
     """获取任务结果"""
     try:
         url = 'https://www.runninghub.cn/task/openapi/outputs'
@@ -390,7 +407,7 @@ def fetch_task_outputs(api_key, task_id, task_type="lighting"):
                 if file_urls:
                     return file_urls
             else:
-                # 溶图打光和图像优化 - 单个输出
+                # 去水印、溶图打光和图像优化 - 单个输出
                 file_url = data["data"][0].get("fileUrl")
                 if file_url:
                     return file_url
@@ -409,6 +426,51 @@ def download_result_image(url):
         raise Exception("下载图片超时")
 
 # --- 6. 任务处理逻辑 ---
+def process_watermark_task(task):
+    """处理去水印任务"""
+    api_key = WATERMARK_API_KEY
+    webapp_id = WATERMARK_WEBAPP_ID
+    node_info = WATERMARK_NODE_INFO
+
+    try:
+        task.progress = 15
+        uploaded_filename = upload_file_with_retry(task.file_data, task.file_name, api_key)
+
+        task.progress = 25
+        node_info_list = copy.deepcopy(node_info)
+        for node in node_info_list:
+            if node["nodeId"] == "191":
+                node["fieldValue"] = uploaded_filename
+
+        task.progress = 35
+        task.api_task_id = run_task_with_retry(api_key, webapp_id, node_info_list)
+
+        poll_count = 0
+        while poll_count < MAX_POLL_COUNT:
+            time.sleep(POLL_INTERVAL)
+            poll_count += 1
+
+            status = get_task_status(api_key, task.api_task_id)
+            task.progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
+
+            if status == "SUCCESS":
+                break
+            elif status == "FAILED":
+                raise Exception("API任务处理失败")
+
+        if poll_count >= MAX_POLL_COUNT:
+            raise Exception(f"任务超时 (>{ACTUAL_TIMEOUT_MINUTES}分钟)")
+
+        task.progress = 95
+        result_url = fetch_task_outputs(api_key, task.api_task_id, "watermark")
+        task.result_data = download_result_image(result_url)
+
+        task.progress = 100
+        task.status = "SUCCESS"
+
+    except Exception as e:
+        handle_task_error(task, e)
+
 def process_lighting_task(task):
     """处理溶图打光任务"""
     api_key = LIGHTING_API_KEY
@@ -606,7 +668,9 @@ def process_single_task(task):
     task.status = "PROCESSING"
     task.start_time = time.time()
 
-    if task.task_type == "lighting":
+    if task.task_type == "watermark":
+        process_watermark_task(task)
+    elif task.task_type == "lighting":
         process_lighting_task(task)
     elif task.task_type == "pose":
         process_pose_task(task)
@@ -624,6 +688,7 @@ def get_stats():
     failed_count = sum(1 for t in st.session_state.tasks if t.status == "FAILED")
     
     # 分类统计
+    watermark_count = sum(1 for t in st.session_state.tasks if t.task_type == "watermark")
     lighting_count = sum(1 for t in st.session_state.tasks if t.task_type == "lighting")
     pose_count = sum(1 for t in st.session_state.tasks if t.task_type == "pose")
     enhance_count = sum(1 for t in st.session_state.tasks if t.task_type == "enhance")
@@ -634,6 +699,7 @@ def get_stats():
         'success': success_count,
         'failed': failed_count,
         'total': len(st.session_state.tasks),
+        'watermark': watermark_count,
         'lighting': lighting_count,
         'pose': pose_count,
         'enhance': enhance_count
@@ -756,10 +822,13 @@ def create_download_buttons(task):
                         use_container_width=True
                     )
     
-    elif task.task_type in ["lighting", "enhance"] and task.result_data:
+    elif task.task_type in ["watermark", "lighting", "enhance"] and task.result_data:
         file_size = len(task.result_data) / 1024
         
-        if task.task_type == "lighting":
+        if task.task_type == "watermark":
+            button_text = f"📥 下载去水印结果 ({file_size:.1f}KB)"
+            file_prefix = "watermark_removed_"
+        elif task.task_type == "lighting":
             button_text = f"📥 下载溶图打光结果 ({file_size:.1f}KB)"
             file_prefix = "lighting_"
         else:
@@ -776,6 +845,75 @@ def create_download_buttons(task):
         )
 
 # --- 10. 功能界面 ---
+def render_watermark_interface():
+    """去水印界面（使用延迟清空策略）"""
+    st.markdown("### 🚿 去水印")
+    st.info("💡 智能去除图片中的水印，保持图片主体完整")
+
+    # 显示任务成功和清空成功的消息
+    if st.session_state.upload_success:
+        st.success("✅ 任务已添加到处理队列!")
+        st.session_state.upload_success = False
+
+    if st.session_state.clear_message:
+        st.markdown(f'<div class="clear-success">✅ {st.session_state.clear_message}</div>', unsafe_allow_html=True)
+        st.session_state.clear_message = ""
+
+    # 图片上传（使用简洁样式，移除虚线框）
+    st.markdown('<div class="watermark-upload-section">', unsafe_allow_html=True)
+    st.markdown("**📸 选择图片**")
+    uploaded_image = st.file_uploader(
+        "选择需要去水印的图片",
+        type=['png', 'jpg', 'jpeg', 'webp'],
+        accept_multiple_files=False,
+        help="支持PNG、JPG、JPEG、WEBP格式",
+        key=f"watermark_uploader_{st.session_state.file_uploader_key}"
+    )
+    
+    # 显示文件信息（不显示图片预览）
+    if uploaded_image:
+        show_file_info(uploaded_image, "watermark")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 按钮区域 - 开始处理和清空图片按钮并排
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        start_processing = st.button("🚿 开始去水印", use_container_width=True, type="primary")
+    
+    with col2:
+        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # 处理按钮事件
+    if clear_images:
+        clear_single_upload_delayed()  # 使用延迟清空策略
+        st.rerun()
+    
+    if start_processing:
+        if uploaded_image:
+            with st.spinner('添加去水印任务到队列...'):
+                st.session_state.task_counter += 1
+                task = TaskItem(
+                    st.session_state.task_counter, 
+                    "watermark",
+                    get_session_key(),
+                    file_data=uploaded_image.getvalue(),
+                    file_name=uploaded_image.name
+                )
+                st.session_state.tasks.append(task)
+                st.session_state.task_queue.append(task)
+
+            # 使用延迟清空策略：先标记成功，延迟清空UI
+            st.session_state.upload_success = True
+            # 延迟清空文件上传器
+            clear_single_upload_delayed()
+            st.rerun()
+        else:
+            st.error("❌ 请先上传图片！")
+
 def render_lighting_interface():
     """溶图打光界面（使用延迟清空策略）"""
     st.markdown("### ✨ 溶图打光")
@@ -987,11 +1125,24 @@ def main():
     # 处理延迟清空操作
     handle_delayed_clear()
 
-    # 侧边栏功能选择（溶图打光在最左侧）
+    # 侧边栏功能选择（去水印在最左侧）
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
         
-        # 溶图打光选项（最左侧）
+        # 去水印选项（最左侧）
+        watermark_selected = st.button(
+            "🚿 去水印", 
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == "去水印" else "secondary"
+        )
+        if watermark_selected and st.session_state.selected_function != "去水印":
+            st.session_state.selected_function = "去水印"
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+        
+        st.caption("智能去除图片水印")
+        
+        # 溶图打光选项
         lighting_selected = st.button(
             "✨ 溶图打光", 
             use_container_width=True,
@@ -1044,6 +1195,7 @@ def main():
         st.divider()
         
         st.markdown("### 📈 分类统计")
+        st.metric("去水印", stats['watermark'])
         st.metric("溶图打光", stats['lighting'])
         st.metric("姿态迁移", stats['pose'])
         st.metric("图像优化", stats['enhance'])
@@ -1051,14 +1203,16 @@ def main():
         st.divider()
         st.caption(f"💡 全局并发限制: {MAX_CONCURRENT}")
         st.caption(f"🔄 自动刷新: {AUTO_REFRESH_INTERVAL}秒")
-        st.caption("✅ 已新增溶图打光功能")
+        st.caption("✅ 已新增去水印功能")
 
     # 主标题
     st.title("🎨 RunningHub AI - 智能图片处理工具")
     st.caption(f"当前模式: **{st.session_state.selected_function}** • 全局并发限制: {MAX_CONCURRENT}")
     
     # 显示功能状态
-    if st.session_state.selected_function == "溶图打光":
+    if st.session_state.selected_function == "去水印":
+        st.info("ℹ️ 去水印：智能水印去除 + 延迟清空策略 + 简洁样式")
+    elif st.session_state.selected_function == "溶图打光":
         st.info("ℹ️ 溶图打光：智能光影处理 + 延迟清空策略 + 简洁样式")
     elif st.session_state.selected_function == "姿态迁移":
         st.info("ℹ️ 姿态迁移：延迟清空策略 + 简洁样式 + 清空按钮")
@@ -1070,7 +1224,9 @@ def main():
 
     # 左侧：功能界面
     with left_col:
-        if st.session_state.selected_function == "溶图打光":
+        if st.session_state.selected_function == "去水印":
+            render_watermark_interface()
+        elif st.session_state.selected_function == "溶图打光":
             render_lighting_interface()
         elif st.session_state.selected_function == "姿态迁移":
             render_pose_interface()
@@ -1089,7 +1245,9 @@ def main():
             # 显示任务
             for task in reversed(st.session_state.tasks):
                 with st.container():
-                    if task.task_type == "lighting":
+                    if task.task_type == "watermark":
+                        task_card_class = "watermark-task-card"
+                    elif task.task_type == "lighting":
                         task_card_class = "lighting-task-card"
                     elif task.task_type == "pose":
                         task_card_class = "pose-task-card"
@@ -1102,7 +1260,11 @@ def main():
                     col1, col2 = st.columns([4, 1])
 
                     with col1:
-                        if task.task_type == "lighting":
+                        if task.task_type == "watermark":
+                            task_type_icon = "🚿"
+                            task_type_name = "去水印"
+                            st.markdown(f"**{task_type_icon} {task.file_name}** `#{task.task_id}`")
+                        elif task.task_type == "lighting":
                             task_type_icon = "✨"
                             task_type_name = "溶图打光"
                             st.markdown(f"**{task_type_icon} {task.file_name}** `#{task.task_id}`")
@@ -1147,7 +1309,9 @@ def main():
                     if task.status == "SUCCESS":
                         elapsed_str = f"{int(task.elapsed_time//60)}:{int(task.elapsed_time%60):02d}"
                         
-                        if task.task_type == "lighting":
+                        if task.task_type == "watermark":
+                            st.success(f"🚿 去水印完成! 用时: {elapsed_str}")
+                        elif task.task_type == "lighting":
                             st.success(f"✨ 溶图打光完成! 用时: {elapsed_str}")
                         elif task.task_type == "pose":
                             result_count = len(task.result_data_list)
@@ -1202,8 +1366,8 @@ def main():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 多功能整合版 v3.0 (新增溶图打光)</b><br>
-        <small>溶图打光 + 姿态迁移 + 图像优化 • 延续延迟清空策略 • 统一UI风格</small>
+        <b>🚀 RunningHub AI - 多功能整合版 v4.0 (新增去水印)</b><br>
+        <small>去水印 + 溶图打光 + 姿态迁移 + 图像优化 • 延续延迟清空策略 • 统一UI风格</small>
     </div>
     """, unsafe_allow_html=True)
 
