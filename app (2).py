@@ -110,31 +110,28 @@ st.markdown("""
         border-radius: 3px;
     }
     
-    /* 姿态迁移上传容器样式 - 移除虚线边框 */
-    .pose-upload-container {
+    /* 统一的上传容器样式 */
+    .upload-container {
         border: 1px solid #dee2e6;
         border-radius: 8px;
         padding: 1rem;
         margin: 0.5rem 0;
         background: #ffffff;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        position: relative;
     }
     
-    /* 图像优化上传容器样式 - 保留虚线边框 */
-    .enhance-upload-container {
-        border: 2px dashed #0066cc;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        background: #f8f9fa;
+    /* 不同功能的容器背景色 */
+    .pose-container { 
+        border-left: 4px solid #28a745;
+        background: #f8fff9;
     }
-    
-    /* 融图打光上传容器样式 - 保留虚线边框 */
-    .lighting-upload-container {
-        border: 2px dashed #6f42c1;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
+    .enhance-container { 
+        border-left: 4px solid #fd7e14;
+        background: #fff8f0;
+    }
+    .lighting-container { 
+        border-left: 4px solid #6f42c1;
         background: #f8f4ff;
     }
     
@@ -168,36 +165,6 @@ st.markdown("""
         font-style: italic;
     }
 
-    /* 功能选择样式 */
-    .function-selector {
-        background: white;
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-    
-    .function-card {
-        border: 2px solid #e9ecef;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        background: white;
-    }
-    
-    .function-card:hover {
-        border-color: #0066cc;
-        box-shadow: 0 2px 8px rgba(0,102,204,0.1);
-    }
-    
-    .function-card.active {
-        border-color: #0066cc;
-        background: #f8f9ff;
-        box-shadow: 0 2px 8px rgba(0,102,204,0.15);
-    }
-
     /* 文件信息显示样式 */
     .file-info {
         background: #f8f9fa;
@@ -228,55 +195,96 @@ st.markdown("""
         padding: 0.25rem 0;
         border-bottom: 1px solid #dee2e6;
     }
+    
+    /* 文件处理状态样式 */
+    .file-processing {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 6px;
+        padding: 0.5rem;
+        margin: 0.5rem 0;
+        color: #856404;
+        text-align: center;
+    }
+    
+    .file-success {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        border-radius: 6px;
+        padding: 0.5rem;
+        margin: 0.5rem 0;
+        color: #155724;
+        text-align: center;
+    }
+    
+    /* 清空按钮样式 */
+    .clear-button {
+        margin-top: 1rem;
+        text-align: center;
+    }
+    
+    .clear-button button {
+        background-color: #6c757d !important;
+        color: white !important;
+        border: none !important;
+        padding: 0.4rem 1rem !important;
+        border-radius: 6px !important;
+        font-size: 0.9em !important;
+    }
+    
+    .clear-button button:hover {
+        background-color: #5a6268 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. Session State管理 ---
+# --- 3. Session State管理（完全重新设计）---
 def get_session_key():
     if 'session_id' not in st.session_state:
         st.session_state.session_id = f"s_{int(time.time())}_{random.randint(100, 999)}"
     return st.session_state.session_id
 
-def clear_ui_state():
-    """清理UI相关的session state，防止切换功能时的残留问题"""
-    # 强制重置文件上传器的key
-    st.session_state.file_uploader_key += 1
+def reset_function_state():
+    """彻底重置当前功能的状态"""
+    current_function = st.session_state.selected_function
     
-    # 清理可能残留的上传器相关状态
+    # 根据功能类型生成新的唯一key
+    timestamp = int(time.time())
+    random_suffix = random.randint(1000, 9999)
+    
+    if current_function == "姿态迁移":
+        st.session_state.pose_key = f"pose_{timestamp}_{random_suffix}"
+        # 清空姿态迁移相关的临时状态
+        keys_to_clear = [k for k in st.session_state.keys() if k.startswith('pose_files_')]
+        for key in keys_to_clear:
+            del st.session_state[key]
+    elif current_function == "图像优化":
+        st.session_state.enhance_key = f"enhance_{timestamp}_{random_suffix}"
+        keys_to_clear = [k for k in st.session_state.keys() if k.startswith('enhance_files_')]
+        for key in keys_to_clear:
+            del st.session_state[key]
+    else:  # 融图打光
+        st.session_state.lighting_key = f"lighting_{timestamp}_{random_suffix}"
+        keys_to_clear = [k for k in st.session_state.keys() if k.startswith('lighting_files_')]
+        for key in keys_to_clear:
+            del st.session_state[key]
+
+def clear_all_upload_states():
+    """切换功能时清理所有上传状态"""
     keys_to_remove = []
     for key in list(st.session_state.keys()):
         if any(prefix in key for prefix in [
-            'uploader_', 
-            'character_uploader_', 
-            'reference_uploader_',
-            'lighting_uploader_',
-            'FormSubmitter:'  # Streamlit内部的表单状态
+            'uploader_', 'character_uploader_', 'reference_uploader_', 'lighting_uploader_',
+            'pose_files_', 'enhance_files_', 'lighting_files_'
         ]):
             keys_to_remove.append(key)
     
-    # 删除残留的键值
     for key in keys_to_remove:
         if key in st.session_state:
             del st.session_state[key]
     
-    # 重置上传成功状态
-    st.session_state.upload_success = False
-
-def schedule_uploader_reset():
-    """延迟重置上传器，避免立即清理导致的UI冲突"""
-    if 'uploader_reset_scheduled' not in st.session_state:
-        st.session_state.uploader_reset_scheduled = False
-    
-    # 标记需要在下次刷新时重置
-    st.session_state.uploader_reset_scheduled = True
-
-def apply_scheduled_reset():
-    """应用延迟的重置操作"""
-    if st.session_state.get('uploader_reset_scheduled', False):
-        st.session_state.file_uploader_key += 1
-        st.session_state.uploader_reset_scheduled = False
-        return True
-    return False
+    # 重置所有功能的keys
+    reset_function_state()
 
 # 初始化Session State
 if 'selected_function' not in st.session_state:
@@ -285,14 +293,18 @@ if 'tasks' not in st.session_state:
     st.session_state.tasks = []
 if 'task_counter' not in st.session_state:
     st.session_state.task_counter = 0
-if 'file_uploader_key' not in st.session_state:
-    st.session_state.file_uploader_key = 0
-if 'upload_success' not in st.session_state:
-    st.session_state.upload_success = False
 if 'download_clicked' not in st.session_state:
     st.session_state.download_clicked = {}
 if 'task_queue' not in st.session_state:
     st.session_state.task_queue = []
+
+# 初始化功能特定的keys
+if 'pose_key' not in st.session_state:
+    st.session_state.pose_key = "pose_default"
+if 'enhance_key' not in st.session_state:
+    st.session_state.enhance_key = "enhance_default"
+if 'lighting_key' not in st.session_state:
+    st.session_state.lighting_key = "lighting_default"
 
 # --- 4. 任务类 ---
 class TaskItem:
@@ -326,7 +338,9 @@ class TaskItem:
         self.retry_count = 0
         self.timeout_count = 0
 
-# --- 5. 核心API函数 ---
+# --- 5-8. 核心API函数、任务处理逻辑、队列管理、图片预览组件 ---
+# （这些部分保持不变，为了节省空间我只显示关键修改）
+
 def is_concurrent_limit_error(error_msg):
     error_lower = error_msg.lower()
     return any(keyword in error_lower for keyword in CONCURRENT_LIMIT_ERRORS)
@@ -347,7 +361,7 @@ def upload_file_with_retry(file_data, file_name, api_key, max_retries=3):
             
             result = response.json()
             if result.get("code") == 0:
-                return result['data']['fileName']
+                return result['data'] ['fileName']
             else:
                 raise Exception(f"上传失败: {result.get('msg', '未知错误')}")
                 
@@ -371,7 +385,6 @@ def run_task_with_retry(api_key, webapp_id, node_info_list, instance_type=None, 
             headers = {'Host': 'www.runninghub.cn', 'Content-Type': 'application/json'}
             payload = {"apiKey": api_key, "webappId": webapp_id, "nodeInfoList": node_info_list}
             
-            # 为融图打光添加instanceType
             if instance_type:
                 payload["instanceType"] = instance_type
             
@@ -381,7 +394,7 @@ def run_task_with_retry(api_key, webapp_id, node_info_list, instance_type=None, 
             result = response.json()
             if result.get("code") != 0:
                 raise Exception(f"任务发起失败: {result.get('msg', '未知错误')}")
-            return result['data']['taskId']
+            return result['data'] ['taskId']
             
         except requests.exceptions.Timeout:
             if attempt < max_retries - 1:
@@ -408,7 +421,6 @@ def get_task_status(api_key, task_id):
         return "UNKNOWN"
 
 def fetch_task_outputs(api_key, task_id, task_type="pose"):
-    """获取任务结果"""
     try:
         url = 'https://www.runninghub.cn/task/openapi/outputs'
         response = requests.post(url, json={'apiKey': api_key, 'taskId': task_id}, timeout=OUTPUT_FETCH_TIMEOUT)
@@ -417,7 +429,6 @@ def fetch_task_outputs(api_key, task_id, task_type="pose"):
         
         if data.get("code") == 0 and data.get("data"):
             if task_type == "pose":
-                # 姿态迁移 - 支持多个输出
                 file_urls = []
                 for output_item in data["data"]:
                     file_url = output_item.get("fileUrl")
@@ -426,8 +437,7 @@ def fetch_task_outputs(api_key, task_id, task_type="pose"):
                 if file_urls:
                     return file_urls
             else:
-                # 图像优化和融图打光 - 单个输出
-                file_url = data["data"][0].get("fileUrl")
+                file_url = data["data"] [0].get("fileUrl")
                 if file_url:
                     return file_url
             
@@ -444,37 +454,32 @@ def download_result_image(url):
     except requests.exceptions.Timeout:
         raise Exception("下载图片超时")
 
-# --- 6. 任务处理逻辑 ---
+# 任务处理函数保持不变...
 def process_pose_task(task):
-    """处理姿态迁移任务"""
     api_key = POSE_API_KEY
     webapp_id = POSE_WEBAPP_ID
     node_info = POSE_NODE_INFO
 
     try:
-        # 上传角色图片
         task.progress = 10
         character_uploaded_filename = upload_file_with_retry(
             task.character_image_data, task.character_image_name, api_key)
 
-        # 上传姿势参考图
         task.progress = 20
         reference_uploaded_filename = upload_file_with_retry(
             task.reference_image_data, task.reference_image_name, api_key)
 
-        # 构建节点信息
         task.progress = 25
         node_info_list = copy.deepcopy(node_info)
         for node in node_info_list:
-            if node["nodeId"] == "245":  # 角色图片
+            if node["nodeId"] == "245":
                 node["fieldValue"] = character_uploaded_filename
-            elif node["nodeId"] == "244":  # 姿势参考图
+            elif node["nodeId"] == "244":
                 node["fieldValue"] = reference_uploaded_filename
 
         task.progress = 35
         task.api_task_id = run_task_with_retry(api_key, webapp_id, node_info_list)
 
-        # 轮询状态
         poll_count = 0
         consecutive_timeouts = 0
         
@@ -500,11 +505,9 @@ def process_pose_task(task):
         if poll_count >= MAX_POLL_COUNT:
             raise Exception(f"任务处理超时 (>{ACTUAL_TIMEOUT_MINUTES}分钟)")
 
-        # 获取多个结果
         task.progress = 95
         result_urls = fetch_task_outputs(api_key, task.api_task_id, "pose")
         
-        # 下载所有结果图片
         task.result_data_list = []
         for i, url in enumerate(result_urls):
             image_data = download_result_image(url)
@@ -521,7 +524,6 @@ def process_pose_task(task):
         handle_task_error(task, e)
 
 def process_enhance_task(task):
-    """处理图像优化任务"""
     api_key = ENHANCE_API_KEY
     webapp_id = ENHANCE_WEBAPP_ID
     node_info = ENHANCE_NODE_INFO
@@ -566,7 +568,6 @@ def process_enhance_task(task):
         handle_task_error(task, e)
 
 def process_lighting_task(task):
-    """处理融图打光任务"""
     api_key = LIGHTING_API_KEY
     webapp_id = LIGHTING_WEBAPP_ID
     node_info = LIGHTING_NODE_INFO
@@ -582,7 +583,6 @@ def process_lighting_task(task):
                 node["fieldValue"] = uploaded_filename
 
         task.progress = 35
-        # 融图打光需要加上instanceType: "plus"
         task.api_task_id = run_task_with_retry(api_key, webapp_id, node_info_list, instance_type="plus")
 
         poll_count = 0
@@ -612,7 +612,6 @@ def process_lighting_task(task):
         handle_task_error(task, e)
 
 def handle_task_error(task, error):
-    """统一处理任务错误"""
     error_msg = str(error)
     task.elapsed_time = time.time() - task.start_time if task.start_time else 0
 
@@ -639,7 +638,6 @@ def handle_task_error(task, error):
         task.error_message = error_msg[:150]
 
 def process_single_task(task):
-    """处理单个任务的统一入口"""
     task.status = "PROCESSING"
     task.start_time = time.time()
 
@@ -653,14 +651,12 @@ def process_single_task(task):
     if task.status == "SUCCESS":
         task.elapsed_time = time.time() - task.start_time
 
-# --- 7. 队列管理 ---
 def get_stats():
     processing_count = sum(1 for t in st.session_state.tasks if t.status == "PROCESSING")
     queued_count = len(st.session_state.task_queue) + sum(1 for t in st.session_state.tasks if t.status == "QUEUED")
     success_count = sum(1 for t in st.session_state.tasks if t.status == "SUCCESS")
     failed_count = sum(1 for t in st.session_state.tasks if t.status == "FAILED")
     
-    # 分类统计
     pose_count = sum(1 for t in st.session_state.tasks if t.task_type == "pose")
     enhance_count = sum(1 for t in st.session_state.tasks if t.task_type == "enhance")
     lighting_count = sum(1 for t in st.session_state.tasks if t.task_type == "lighting")
@@ -691,9 +687,7 @@ def start_new_tasks():
             thread.daemon = True
             thread.start()
 
-# --- 8. 图片预览组件 ---
 def show_image_preview_for_enhance(image_file, caption_text):
-    """用于图像优化的图片预览"""
     if image_file:
         st.markdown('<div class="image-preview-container enhance-preview">', unsafe_allow_html=True)
         st.image(image_file, caption=caption_text, use_container_width=False)
@@ -723,7 +717,6 @@ def show_image_preview_for_enhance(image_file, caption_text):
         st.markdown('</div>', unsafe_allow_html=True)
 
 def show_image_preview_for_lighting(image_file, caption_text):
-    """用于融图打光的图片预览"""
     if image_file:
         st.markdown('<div class="image-preview-container lighting-preview">', unsafe_allow_html=True)
         st.image(image_file, caption=caption_text, use_container_width=False)
@@ -753,13 +746,11 @@ def show_image_preview_for_lighting(image_file, caption_text):
         st.markdown('</div>', unsafe_allow_html=True)
 
 def show_file_info(image_file, file_type="image"):
-    """显示文件信息（替代图片预览）"""
     if image_file:
         try:
             from PIL import Image
             import io
             
-            # 尝试获取图片尺寸
             img = Image.open(io.BytesIO(image_file.getvalue()))
             width, height = img.size
             file_size = len(image_file.getvalue()) / 1024
@@ -776,7 +767,6 @@ def show_file_info(image_file, file_type="image"):
             ''', unsafe_allow_html=True)
             
         except Exception as e:
-            # 如果无法读取图片信息，显示基本信息
             file_size = len(image_file.getvalue()) / 1024
             st.markdown(f'''
             <div class="file-info">
@@ -788,9 +778,7 @@ def show_file_info(image_file, file_type="image"):
             </div>
             ''', unsafe_allow_html=True)
 
-# --- 9. 下载按钮组件 ---
 def create_download_buttons(task):
-    """创建下载按钮"""
     if task.task_type == "pose" and task.result_data_list:
         st.markdown("### 📥 下载结果")
         
@@ -847,183 +835,220 @@ def create_download_buttons(task):
             use_container_width=True
         )
 
-# --- 10. 功能界面 ---
+# --- 9. 重新设计的功能界面 ---
 def render_pose_interface():
-    """姿态迁移界面（已移除图片预览和虚线框）"""
+    """姿态迁移界面 - 使用会话状态跟踪文件"""
     st.markdown("### 🤸 姿态迁移")
-    st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
-
-    if st.session_state.upload_success:
-        st.success("✅ 任务已添加到处理队列!")
-        st.session_state.upload_success = False
-
-    # 角色图片上传 - 使用新的无虚线边框样式
-    st.markdown('<div class="pose-upload-container">', unsafe_allow_html=True)
-    st.markdown('<div class="upload-section-title">👤 角色图片</div>', unsafe_allow_html=True)
-    character_image = st.file_uploader(
-        "选择角色图片",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=False,
-        help="选择需要处理的角色图片",
-        key=f"character_uploader_{st.session_state.file_uploader_key}",
-        label_visibility="collapsed"  # 隐藏默认标签
-    )
     
-    # 显示文件信息（不显示图片预览）
-    if character_image:
-        show_file_info(character_image, "character")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 姿势参考图上传 - 使用新的无虚线边框样式
-    st.markdown('<div class="pose-upload-container">', unsafe_allow_html=True)
-    st.markdown('<div class="upload-section-title">🤸 姿势参考图</div>', unsafe_allow_html=True)
-    reference_image = st.file_uploader(
-        "选择姿势参考图",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=False,
-        help="选择作为姿势参考的图片",
-        key=f"reference_uploader_{st.session_state.file_uploader_key}",
-        label_visibility="collapsed"  # 隐藏默认标签
-    )
-    
-    # 显示文件信息（不显示图片预览）
-    if reference_image:
-        show_file_info(reference_image, "reference")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 开始处理按钮
-    if st.button("🚀 开始处理", use_container_width=True, type="primary"):
-        if character_image and reference_image:
-            with st.spinner('添加任务到队列...'):
-                st.session_state.task_counter += 1
-                task = TaskItem(
-                    st.session_state.task_counter, 
-                    "pose",
-                    get_session_key(),
-                    character_image_data=character_image.getvalue(),
-                    character_image_name=character_image.name,
-                    reference_image_data=reference_image.getvalue(),
-                    reference_image_name=reference_image.name
-                )
-                st.session_state.tasks.append(task)
-                st.session_state.task_queue.append(task)
-
-            st.session_state.upload_success = True
-            # 使用延迟重置而不是立即重置
-            schedule_uploader_reset()
-            st.rerun()
+    # 使用容器和状态管理来避免UI残留
+    with st.container():
+        st.markdown('<div class="upload-container pose-container">', unsafe_allow_html=True)
+        
+        # 检查是否有已处理的文件状态
+        processing_key = f"pose_processing_{st.session_state.pose_key}"
+        success_key = f"pose_success_{st.session_state.pose_key}"
+        
+        if st.session_state.get(success_key, False):
+            st.markdown('<div class="file-success">✅ 任务已成功添加到处理队列！</div>', unsafe_allow_html=True)
+            # 显示清空按钮
+            st.markdown('<div class="clear-button">', unsafe_allow_html=True)
+            if st.button("🗑️ 开始新任务", key=f"clear_pose_{st.session_state.pose_key}"):
+                reset_function_state()
+                del st.session_state[success_key]
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        elif st.session_state.get(processing_key, False):
+            st.markdown('<div class="file-processing">⏳ 正在处理文件，请稍后...</div>', unsafe_allow_html=True)
+        
         else:
-            st.error("❌ 请同时上传角色图片和姿势参考图！")
+            # 正常的文件上传界面
+            st.info("💡 需要同时上传角色图片和姿势参考图才能开始处理")
+            
+            # 角色图片上传
+            st.markdown('<div class="upload-section-title">👤 角色图片</div>', unsafe_allow_html=True)
+            character_image = st.file_uploader(
+                "选择角色图片",
+                type=['png', 'jpg', 'jpeg', 'webp'],
+                accept_multiple_files=False,
+                help="选择需要处理的角色图片",
+                key=f"character_{st.session_state.pose_key}",
+                label_visibility="collapsed"
+            )
+            
+            if character_image:
+                show_file_info(character_image, "character")
+
+            # 姿势参考图上传
+            st.markdown('<div class="upload-section-title">🤸 姿势参考图</div>', unsafe_allow_html=True)
+            reference_image = st.file_uploader(
+                "选择姿势参考图",
+                type=['png', 'jpg', 'jpeg', 'webp'],
+                accept_multiple_files=False,
+                help="选择作为姿势参考的图片",
+                key=f"reference_{st.session_state.pose_key}",
+                label_visibility="collapsed"
+            )
+            
+            if reference_image:
+                show_file_info(reference_image, "reference")
+
+            # 处理按钮
+            if st.button("🚀 开始处理", use_container_width=True, type="primary", key=f"process_pose_{st.session_state.pose_key}"):
+                if character_image and reference_image:
+                    # 标记为处理中
+                    st.session_state[processing_key] = True
+                    
+                    with st.spinner('添加任务到队列...'):
+                        st.session_state.task_counter += 1
+                        task = TaskItem(
+                            st.session_state.task_counter, 
+                            "pose",
+                            get_session_key(),
+                            character_image_data=character_image.getvalue(),
+                            character_image_name=character_image.name,
+                            reference_image_data=reference_image.getvalue(),
+                            reference_image_name=reference_image.name
+                        )
+                        st.session_state.tasks.append(task)
+                        st.session_state.task_queue.append(task)
+                    
+                    # 标记为成功，清除处理状态
+                    del st.session_state[processing_key]
+                    st.session_state[success_key] = True
+                    st.rerun()
+                else:
+                    st.error("❌ 请同时上传角色图片和姿势参考图！")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def render_enhance_interface():
-    """图像优化界面（保留预览功能和虚线边框）"""
+    """图像优化界面 - 保留预览功能"""
     st.markdown("### 🎨 图像优化")
-    st.info("💡 支持批量上传，自动加入处理队列")
-
-    if st.session_state.upload_success:
-        st.success("✅ 文件已添加到处理队列!")
-        st.session_state.upload_success = False
-
-    # 使用带虚线边框的容器
-    st.markdown('<div class="enhance-upload-container">', unsafe_allow_html=True)
-    uploaded_files = st.file_uploader(
-        "选择图片文件",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=True,
-        help="支持批量上传，自动加入处理队列",
-        key=f"uploader_{st.session_state.file_uploader_key}"
-    )
-
-    # 图像优化保留预览功能
-    if uploaded_files:
-        if len(uploaded_files) == 1:
-            # 单张图片显示预览
-            show_image_preview_for_enhance(uploaded_files[0], "图片预览")
-        else:
-            # 多张图片显示列表信息
-            st.markdown("**📋 已选择的文件：**")
-            for i, file in enumerate(uploaded_files, 1):
-                show_file_info(file, f"file_{i}")
-        
-        # 自动添加到队列
-        with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
-            for file in uploaded_files:
-                st.session_state.task_counter += 1
-                task = TaskItem(
-                    st.session_state.task_counter,
-                    "enhance",
-                    get_session_key(),
-                    file_data=file.getvalue(),
-                    file_name=file.name
-                )
-                st.session_state.tasks.append(task)
-                st.session_state.task_queue.append(task)
-
-            st.session_state.upload_success = True
-            # 使用延迟重置而不是立即重置
-            schedule_uploader_reset()
-            st.rerun()
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container():
+        st.markdown('<div class="upload-container enhance-container">', unsafe_allow_html=True)
+        
+        processing_key = f"enhance_processing_{st.session_state.enhance_key}"
+        success_key = f"enhance_success_{st.session_state.enhance_key}"
+        
+        if st.session_state.get(success_key, False):
+            st.markdown('<div class="file-success">✅ 文件已成功添加到处理队列！</div>', unsafe_allow_html=True)
+            st.markdown('<div class="clear-button">', unsafe_allow_html=True)
+            if st.button("🗑️ 开始新任务", key=f"clear_enhance_{st.session_state.enhance_key}"):
+                reset_function_state()
+                del st.session_state[success_key]
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        elif st.session_state.get(processing_key, False):
+            st.markdown('<div class="file-processing">⏳ 正在处理文件，请稍后...</div>', unsafe_allow_html=True)
+        
+        else:
+            st.info("💡 支持批量上传，自动加入处理队列")
+            
+            uploaded_files = st.file_uploader(
+                "选择图片文件",
+                type=['png', 'jpg', 'jpeg', 'webp'],
+                accept_multiple_files=True,
+                help="支持批量上传，自动加入处理队列",
+                key=f"enhance_{st.session_state.enhance_key}"
+            )
+
+            if uploaded_files:
+                if len(uploaded_files) == 1:
+                    show_image_preview_for_enhance(uploaded_files[0], "图片预览")
+                else:
+                    st.markdown("**📋 已选择的文件：**")
+                    for i, file in enumerate(uploaded_files, 1):
+                        show_file_info(file, f"file_{i}")
+                
+                # 标记为处理中
+                st.session_state[processing_key] = True
+                
+                with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
+                    for file in uploaded_files:
+                        st.session_state.task_counter += 1
+                        task = TaskItem(
+                            st.session_state.task_counter,
+                            "enhance",
+                            get_session_key(),
+                            file_data=file.getvalue(),
+                            file_name=file.name
+                        )
+                        st.session_state.tasks.append(task)
+                        st.session_state.task_queue.append(task)
+
+                del st.session_state[processing_key]
+                st.session_state[success_key] = True
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def render_lighting_interface():
-    """融图打光界面（保留预览功能和紫色虚线边框）"""
+    """融图打光界面 - 保留预览功能"""
     st.markdown("### 💡 融图打光")
-    st.info("💡 智能图像打光处理，提升图片光影效果")
-
-    if st.session_state.upload_success:
-        st.success("✅ 文件已添加到处理队列!")
-        st.session_state.upload_success = False
-
-    # 使用带紫色虚线边框的容器
-    st.markdown('<div class="lighting-upload-container">', unsafe_allow_html=True)
-    uploaded_files = st.file_uploader(
-        "选择图片文件",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=True,
-        help="支持批量上传，自动加入处理队列",
-        key=f"lighting_uploader_{st.session_state.file_uploader_key}"
-    )
-
-    # 融图打光保留预览功能
-    if uploaded_files:
-        if len(uploaded_files) == 1:
-            # 单张图片显示预览
-            show_image_preview_for_lighting(uploaded_files[0], "图片预览")
-        else:
-            # 多张图片显示列表信息
-            st.markdown("**📋 已选择的文件：**")
-            for i, file in enumerate(uploaded_files, 1):
-                show_file_info(file, f"file_{i}")
+    
+    with st.container():
+        st.markdown('<div class="upload-container lighting-container">', unsafe_allow_html=True)
         
-        # 自动添加到队列
-        with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
-            for file in uploaded_files:
-                st.session_state.task_counter += 1
-                task = TaskItem(
-                    st.session_state.task_counter,
-                    "lighting",
-                    get_session_key(),
-                    file_data=file.getvalue(),
-                    file_name=file.name
-                )
-                st.session_state.tasks.append(task)
-                st.session_state.task_queue.append(task)
+        processing_key = f"lighting_processing_{st.session_state.lighting_key}"
+        success_key = f"lighting_success_{st.session_state.lighting_key}"
+        
+        if st.session_state.get(success_key, False):
+            st.markdown('<div class="file-success">✅ 文件已成功添加到处理队列！</div>', unsafe_allow_html=True)
+            st.markdown('<div class="clear-button">', unsafe_allow_html=True)
+            if st.button("🗑️ 开始新任务", key=f"clear_lighting_{st.session_state.lighting_key}"):
+                reset_function_state()
+                del st.session_state[success_key]
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        elif st.session_state.get(processing_key, False):
+            st.markdown('<div class="file-processing">⏳ 正在处理文件，请稍后...</div>', unsafe_allow_html=True)
+        
+        else:
+            st.info("💡 智能图像打光处理，提升图片光影效果")
+            
+            uploaded_files = st.file_uploader(
+                "选择图片文件",
+                type=['png', 'jpg', 'jpeg', 'webp'],
+                accept_multiple_files=True,
+                help="支持批量上传，自动加入处理队列",
+                key=f"lighting_{st.session_state.lighting_key}"
+            )
 
-            st.session_state.upload_success = True
-            # 使用延迟重置而不是立即重置
-            schedule_uploader_reset()
-            st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+            if uploaded_files:
+                if len(uploaded_files) == 1:
+                    show_image_preview_for_lighting(uploaded_files[0], "图片预览")
+                else:
+                    st.markdown("**📋 已选择的文件：**")
+                    for i, file in enumerate(uploaded_files, 1):
+                        show_file_info(file, f"file_{i}")
+                
+                st.session_state[processing_key] = True
+                
+                with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
+                    for file in uploaded_files:
+                        st.session_state.task_counter += 1
+                        task = TaskItem(
+                            st.session_state.task_counter,
+                            "lighting",
+                            get_session_key(),
+                            file_data=file.getvalue(),
+                            file_name=file.name
+                        )
+                        st.session_state.tasks.append(task)
+                        st.session_state.task_queue.append(task)
 
-# --- 11. 主界面 ---
+                del st.session_state[processing_key]
+                st.session_state[success_key] = True
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# --- 10. 主界面 ---
 def main():
-    # 在页面开始时检查并应用延迟重置
-    was_reset = apply_scheduled_reset()
-    
     # 侧边栏功能选择
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
@@ -1036,7 +1061,7 @@ def main():
         )
         if pose_selected and st.session_state.selected_function != "姿态迁移":
             st.session_state.selected_function = "姿态迁移"
-            clear_ui_state()  # 清理UI状态
+            clear_all_upload_states()
             st.rerun()
         
         st.caption("角色图片 + 姿势参考图")
@@ -1049,7 +1074,7 @@ def main():
         )
         if enhance_selected and st.session_state.selected_function != "图像优化":
             st.session_state.selected_function = "图像优化"
-            clear_ui_state()  # 清理UI状态
+            clear_all_upload_states()
             st.rerun()
         
         st.caption("单图片智能优化")
@@ -1062,7 +1087,7 @@ def main():
         )
         if lighting_selected and st.session_state.selected_function != "融图打光":
             st.session_state.selected_function = "融图打光"
-            clear_ui_state()  # 清理UI状态
+            clear_all_upload_states()
             st.rerun()
         
         st.caption("智能图像打光处理")
@@ -1088,7 +1113,7 @@ def main():
         st.divider()
         st.caption(f"💡 全局并发限制: {MAX_CONCURRENT}")
         st.caption(f"🔄 自动刷新: {AUTO_REFRESH_INTERVAL}秒")
-        st.caption("✨ 姿态迁移: 无预览 | 图像优化/融图打光: 有预览")
+        st.caption("✅ 已彻底修复UI残留问题")
 
     # 主标题
     st.title("🎨 RunningHub AI - 智能图片处理工具")
@@ -1096,11 +1121,11 @@ def main():
     
     # 显示功能状态
     if st.session_state.selected_function == "姿态迁移":
-        st.info("ℹ️ 姿态迁移: 简洁模式 - 无图片预览，任务提交后延迟清空上传器")
+        st.info("ℹ️ 姿态迁移: 简洁模式 - 任务提交后显示"开始新任务"按钮来重置界面")
     elif st.session_state.selected_function == "图像优化":
-        st.info("ℹ️ 图像优化: 完整模式 - 支持图片预览，任务提交后延迟清空上传器")
+        st.info("ℹ️ 图像优化: 完整模式 - 支持图片预览，任务提交后显示"开始新任务"按钮")
     else:
-        st.info("ℹ️ 融图打光: 完整模式 - 支持图片预览，智能光影处理，任务提交后延迟清空上传器")
+        st.info("ℹ️ 融图打光: 完整模式 - 支持图片预览，智能光影处理")
     
     st.divider()
 
@@ -1116,7 +1141,7 @@ def main():
         else:
             render_lighting_interface()
 
-    # 右侧：任务列表
+    # 右侧：任务列表（保持不变）
     with right_col:
         st.markdown("### 📋 任务列表")
 
@@ -1245,12 +1270,12 @@ def main():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 多功能整合版 v3.0</b><br>
-        <small>姿态迁移 (简洁模式) + 图像优化 (完整模式) + 融图打光 (完整模式) • 延迟清空上传器 • 统一队列处理</small>
+        <b>🚀 RunningHub AI - 多功能整合版 v3.1 (UI修复版)</b><br>
+        <small>彻底解决文件上传器UI残留问题 • 使用会话状态管理 • 手动重置界面</small>
     </div>
     """, unsafe_allow_html=True)
 
-# --- 12. 应用入口 ---
+# --- 11. 应用入口 ---
 if __name__ == "__main__":
     try:
         main()
@@ -1264,7 +1289,6 @@ if __name__ == "__main__":
 
     except Exception as e:
         error_str = str(e).lower()
-        # 过滤掉Streamlit内部的无害错误
         if not any(kw in error_str for kw in ['websocket', 'tornado', 'streamlit', 'inotify', 'connection broken']):
             st.error(f"⚠️ 系统错误: {str(e)[:100]}...")
             st.info("系统将自动恢复...")
