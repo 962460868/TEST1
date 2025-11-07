@@ -194,16 +194,6 @@ st.markdown("""
         font-size: 0.85em;
     }
     
-    /* 清空按钮样式 */
-    .clear-button button {
-        background-color: #6c757d !important;
-        color: white !important;
-    }
-    
-    .clear-button button:hover {
-        background-color: #5a6268 !important;
-    }
-    
     /* 成功消息样式 */
     .clear-success {
         background-color: #d4edda;
@@ -263,7 +253,11 @@ def get_session_key():
 
 def clear_ui_state():
     """简化的UI状态清理，避免与Streamlit内部状态冲突"""
-    st.session_state.file_uploader_key += 1
+    # 增加所有功能的文件上传器key，确保切换功能时彻底清空UI
+    st.session_state.watermark_uploader_key += 1
+    st.session_state.lighting_uploader_key += 1
+    st.session_state.pose_uploader_key += 1
+    st.session_state.enhance_uploader_key += 1
     st.session_state.upload_success = False
     st.session_state.need_ui_refresh = True
 
@@ -275,9 +269,17 @@ def clear_single_upload_delayed():
 def handle_delayed_clear():
     """处理延迟清空操作"""
     if st.session_state.get('need_single_clear', False):
-        st.session_state.file_uploader_key += 1
+        # 根据当前功能增加对应的key
+        if st.session_state.selected_function == "去水印":
+            st.session_state.watermark_uploader_key += 1
+        elif st.session_state.selected_function == "溶图打光":
+            st.session_state.lighting_uploader_key += 1
+        elif st.session_state.selected_function == "姿态迁移":
+            st.session_state.pose_uploader_key += 1
+        elif st.session_state.selected_function == "图像优化":
+            st.session_state.enhance_uploader_key += 1
         st.session_state.need_single_clear = False
-        
+
     if st.session_state.get('need_ui_refresh', False):
         st.session_state.need_ui_refresh = False
 
@@ -288,8 +290,15 @@ if 'tasks' not in st.session_state:
     st.session_state.tasks = []
 if 'task_counter' not in st.session_state:
     st.session_state.task_counter = 0
-if 'file_uploader_key' not in st.session_state:
-    st.session_state.file_uploader_key = 0
+# 为每个功能创建独立的文件上传器key
+if 'watermark_uploader_key' not in st.session_state:
+    st.session_state.watermark_uploader_key = 0
+if 'lighting_uploader_key' not in st.session_state:
+    st.session_state.lighting_uploader_key = 0
+if 'pose_uploader_key' not in st.session_state:
+    st.session_state.pose_uploader_key = 0
+if 'enhance_uploader_key' not in st.session_state:
+    st.session_state.enhance_uploader_key = 0
 if 'upload_success' not in st.session_state:
     st.session_state.upload_success = False
 if 'download_clicked' not in st.session_state:
@@ -922,7 +931,7 @@ def render_watermark_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=False,
         help="支持PNG、JPG、JPEG、WEBP格式",
-        key=f"watermark_uploader_{st.session_state.file_uploader_key}"
+        key=f"watermark_uploader_{st.session_state.watermark_uploader_key}"
     )
     
     # 显示文件信息（不显示图片预览）
@@ -938,9 +947,7 @@ def render_watermark_interface():
         start_processing = st.button("🚿 开始去水印", use_container_width=True, type="primary")
 
     with col2:
-        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
-        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空", use_container_width=True, key="clear_watermark")
 
     # 处理按钮事件
     if clear_images:
@@ -991,7 +998,7 @@ def render_lighting_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=False,
         help="支持PNG、JPG、JPEG、WEBP格式",
-        key=f"lighting_uploader_{st.session_state.file_uploader_key}"
+        key=f"lighting_uploader_{st.session_state.lighting_uploader_key}"
     )
     
     # 显示文件信息（不显示图片预览）
@@ -1007,9 +1014,7 @@ def render_lighting_interface():
         start_processing = st.button("✨ 开始溶图打光", use_container_width=True, type="primary")
 
     with col2:
-        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
-        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空", use_container_width=True, key="clear_lighting")
 
     # 处理按钮事件
     if clear_images:
@@ -1060,7 +1065,7 @@ def render_pose_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=False,
         help="选择需要处理的角色图片",
-        key=f"character_uploader_{st.session_state.file_uploader_key}"
+        key=f"character_uploader_{st.session_state.pose_uploader_key}"
     )
     
     # 显示文件信息（不显示图片预览）
@@ -1077,7 +1082,7 @@ def render_pose_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=False,
         help="选择作为姿势参考的图片",
-        key=f"reference_uploader_{st.session_state.file_uploader_key}"
+        key=f"reference_uploader_{st.session_state.pose_uploader_key}"
     )
     
     # 显示文件信息（不显示图片预览）
@@ -1093,9 +1098,7 @@ def render_pose_interface():
         start_processing = st.button("🚀 开始处理", use_container_width=True, type="primary")
 
     with col2:
-        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
-        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空", use_container_width=True, key="clear_pose")
 
     # 处理按钮事件
     if clear_images:
@@ -1169,7 +1172,7 @@ def render_enhance_interface():
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=True,
         help="支持批量上传，自动加入处理队列",
-        key=f"uploader_{st.session_state.file_uploader_key}"
+        key=f"enhance_uploader_{st.session_state.enhance_uploader_key}"
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1200,7 +1203,7 @@ def render_enhance_interface():
                 st.session_state.task_queue.append(task)
 
             st.session_state.upload_success = True
-            st.session_state.file_uploader_key += 1
+            st.session_state.enhance_uploader_key += 1
             st.rerun()
 
 # --- 11. 主界面 ---
