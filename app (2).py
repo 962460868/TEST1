@@ -23,21 +23,21 @@ logging.getLogger("tornado.application").setLevel(logging.ERROR)
 logging.getLogger("tornado.general").setLevel(logging.ERROR)
 
 # API配置 - 去水印
-WATERMARK_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
+WATERMARK_API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
 WATERMARK_WEBAPP_ID = "1986469254155403266"
 WATERMARK_NODE_INFO = [
     {"nodeId": "191", "fieldName": "image", "fieldValue": "placeholder.jpg", "description": "image"}
 ]
 
 # API配置 - 溶图打光
-LIGHTING_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
+LIGHTING_API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
 LIGHTING_WEBAPP_ID = "1985718229576425473"
 LIGHTING_NODE_INFO = [
     {"nodeId": "437", "fieldName": "image", "fieldValue": "placeholder.png", "description": "image"}
 ]
 
 # API配置 - 姿态迁移
-POSE_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
+POSE_API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
 POSE_WEBAPP_ID = "1975745173911154689"
 POSE_NODE_INFO = [
     {"nodeId": "245", "fieldName": "image", "fieldValue": "placeholder.png", "description": "角色图片"},
@@ -45,7 +45,7 @@ POSE_NODE_INFO = [
 ]
 
 # API配置 - 图像优化 WAN 2.2（当前版本）
-ENHANCE_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
+ENHANCE_API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
 ENHANCE_WEBAPP_ID_V2_2 = "1986501194824773634"
 ENHANCE_NODE_INFO_V2_2 = [
     {"nodeId": "14", "fieldName": "image", "fieldValue": "placeholder.jpg", "description": "image"}
