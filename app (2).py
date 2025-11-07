@@ -44,11 +44,19 @@ POSE_NODE_INFO = [
     {"nodeId": "244", "fieldName": "image", "fieldValue": "placeholder.png", "description": "姿势参考图"}
 ]
 
-# API配置 - 图像优化（已更新）
+# API配置 - 图像优化 WAN 2.2（当前版本）
 ENHANCE_API_KEY = "c95f4c4d2703479abfbc55eefeb9bb71"
-ENHANCE_WEBAPP_ID = "1986501194824773634"
-ENHANCE_NODE_INFO = [
+ENHANCE_WEBAPP_ID_V2_2 = "1986501194824773634"
+ENHANCE_NODE_INFO_V2_2 = [
     {"nodeId": "14", "fieldName": "image", "fieldValue": "placeholder.jpg", "description": "image"}
+]
+
+# API配置 - 图像优化 WAN 2.1
+ENHANCE_WEBAPP_ID_V2_1 = "1947599512657453057"
+ENHANCE_NODE_INFO_V2_1 = [
+    {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"},
+    {"nodeId": "60", "fieldName": "text", "fieldValue": "8k, high quality, high detail", "description": "正向提示词补充"},
+    {"nodeId": "4", "fieldName": "text", "fieldValue": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走", "description": "反向提示词"}
 ]
 
 # 系统配置 - 全局并发限制
@@ -256,6 +264,8 @@ if 'clear_message' not in st.session_state:
     st.session_state.clear_message = ""
 if 'need_ui_refresh' not in st.session_state:
     st.session_state.need_ui_refresh = False
+if 'enhance_version' not in st.session_state:
+    st.session_state.enhance_version = "WAN 2.2"  # 默认使用 WAN 2.2
 
 # --- 4. 任务类 ---
 class TaskItem:
@@ -288,6 +298,7 @@ class TaskItem:
         elif task_type == "enhance":
             self.file_data = kwargs.get('file_data')
             self.file_name = kwargs.get('file_name')
+            self.enhance_version = kwargs.get('enhance_version', 'WAN 2.2')  # 默认 WAN 2.2
             self.result_data = None
         
         # 通用属性
@@ -590,10 +601,18 @@ def process_pose_task(task):
         handle_task_error(task, e)
 
 def process_enhance_task(task):
-    """处理图像优化任务（已更新API配置）"""
+    """处理图像优化任务（支持 WAN 2.1 和 WAN 2.2）"""
     api_key = ENHANCE_API_KEY
-    webapp_id = ENHANCE_WEBAPP_ID
-    node_info = ENHANCE_NODE_INFO
+
+    # 根据版本选择不同的配置
+    if task.enhance_version == "WAN 2.1":
+        webapp_id = ENHANCE_WEBAPP_ID_V2_1
+        node_info = ENHANCE_NODE_INFO_V2_1
+        image_node_id = "38"
+    else:  # WAN 2.2
+        webapp_id = ENHANCE_WEBAPP_ID_V2_2
+        node_info = ENHANCE_NODE_INFO_V2_2
+        image_node_id = "14"
 
     try:
         task.progress = 15
@@ -602,7 +621,7 @@ def process_enhance_task(task):
         task.progress = 25
         node_info_list = copy.deepcopy(node_info)
         for node in node_info_list:
-            if node["nodeId"] == "14":  # 更新为新的 nodeId
+            if node["nodeId"] == image_node_id:
                 node["fieldValue"] = uploaded_filename
 
         task.progress = 35
@@ -1078,6 +1097,30 @@ def render_enhance_interface():
         st.success("✅ 文件已添加到处理队列!")
         st.session_state.upload_success = False
 
+    # 版本选择
+    st.markdown("**🔧 选择 API 版本**")
+    col1, col2 = st.columns(2)
+    with col1:
+        wan22_selected = st.button(
+            "WAN 2.2 (当前版本)",
+            use_container_width=True,
+            type="primary" if st.session_state.enhance_version == "WAN 2.2" else "secondary"
+        )
+        if wan22_selected:
+            st.session_state.enhance_version = "WAN 2.2"
+
+    with col2:
+        wan21_selected = st.button(
+            "WAN 2.1",
+            use_container_width=True,
+            type="primary" if st.session_state.enhance_version == "WAN 2.1" else "secondary"
+        )
+        if wan21_selected:
+            st.session_state.enhance_version = "WAN 2.1"
+
+    # 显示当前选择的版本
+    st.markdown(f'<div class="file-info">当前选择: **{st.session_state.enhance_version}**</div>', unsafe_allow_html=True)
+
     # 图像优化保留虚线框样式
     st.markdown('<div class="upload-container">', unsafe_allow_html=True)
     uploaded_files = st.file_uploader(
@@ -1099,8 +1142,8 @@ def render_enhance_interface():
             st.markdown("**📋 已选择的文件：**")
             for i, file in enumerate(uploaded_files, 1):
                 show_file_info(file, f"file_{i}")
-        
-        # 自动添加到队列
+
+        # 自动添加到队列（包含版本信息）
         with st.spinner(f'添加 {len(uploaded_files)} 个文件...'):
             for file in uploaded_files:
                 st.session_state.task_counter += 1
@@ -1109,7 +1152,8 @@ def render_enhance_interface():
                     "enhance",
                     get_session_key(),
                     file_data=file.getvalue(),
-                    file_name=file.name
+                    file_name=file.name,
+                    enhance_version=st.session_state.enhance_version  # 传入版本信息
                 )
                 st.session_state.tasks.append(task)
                 st.session_state.task_queue.append(task)
@@ -1276,8 +1320,9 @@ def main():
                             st.markdown(f'<div class="compact-info">🤸 参考: {task.reference_image_name}</div>', unsafe_allow_html=True)
                         else:
                             task_type_icon = "🎨"
-                            st.markdown(f"**{task_type_icon} {task.file_name}** `#{task.task_id}`")
-                        
+                            version_tag = f" [{task.enhance_version}]" if hasattr(task, 'enhance_version') else ""
+                            st.markdown(f"**{task_type_icon} {task.file_name}{version_tag}** `#{task.task_id}`")
+
                         if task.retry_count > 0:
                             st.markdown(f'<div class="compact-info">🔄 重试 {task.retry_count}/{MAX_RETRIES}</div>', unsafe_allow_html=True)
                         if task.timeout_count > 0:
