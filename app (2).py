@@ -1263,46 +1263,6 @@ def main():
             st.rerun()
 
         st.caption("智能去除图片水印")
-        
-        st.divider()
-        
-        # 状态面板
-        st.markdown("### 📊 系统状态")
-        stats = get_stats()
-        
-        st.metric("处理中", f"{stats['processing']}/{MAX_CONCURRENT}")
-        st.metric("队列中", stats['queued'])
-        st.metric("已完成", stats['success'])
-        st.metric("失败", stats['failed'])
-        
-        st.divider()
-        
-        st.markdown("### 📈 分类统计")
-        st.metric("去水印", stats['watermark'])
-        st.metric("溶图打光", stats['lighting'])
-        st.metric("姿态迁移", stats['pose'])
-        st.metric("图像优化", stats['enhance'])
-        
-        st.divider()
-        st.caption(f"💡 全局并发限制: {MAX_CONCURRENT}")
-        st.caption(f"🔄 自动刷新: {AUTO_REFRESH_INTERVAL}秒")
-        st.caption("✅ 已更新图像优化API")
-
-    # 主标题
-    st.title("🎨 RunningHub AI - 智能图片处理工具")
-    st.caption(f"当前模式: **{st.session_state.selected_function}** • 全局并发限制: {MAX_CONCURRENT}")
-    
-    # 显示功能状态
-    if st.session_state.selected_function == "图像优化":
-        st.info("ℹ️ 图像优化：支持 WAN2.1 & WAN2.2 模型 + 批量处理 + 预览功能")
-    elif st.session_state.selected_function == "姿态迁移":
-        st.info("ℹ️ 姿态迁移：延迟清空策略 + 简洁样式 + 清空按钮")
-    elif st.session_state.selected_function == "溶图打光":
-        st.info("ℹ️ 溶图打光：智能光影处理 + 延迟清空策略 + 简洁样式")
-    elif st.session_state.selected_function == "去水印":
-        st.info("ℹ️ 去水印：智能水印去除 + 延迟清空策略 + 简洁样式")
-
-    st.divider()
 
     # 主界面布局
     left_col, right_col = st.columns([1.8, 3.2])
@@ -1447,15 +1407,6 @@ def main():
             with col3:
                 if st.button("🔄 强制刷新", use_container_width=True):
                     st.rerun()
-
-    # 页脚
-    st.divider()
-    st.markdown("""
-    <div style='text-align: center; color: #6c757d; padding: 15px;'>
-        <b>🚀 RunningHub AI - 多功能整合版 v4.1 (已更新图像优化API)</b><br>
-        <small>去水印 + 溶图打光 + 姿态迁移 + 图像优化 • 延续延迟清空策略 • 统一UI风格</small>
-    </div>
-    """, unsafe_allow_html=True)
 
 # --- 12. 应用入口 ---
 if __name__ == "__main__":
