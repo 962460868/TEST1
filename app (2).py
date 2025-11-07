@@ -932,11 +932,11 @@ def render_watermark_interface():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 按钮区域 - 开始处理和清空图片按钮并排
-    col1, col2 = st.columns([3, 1])
-    
+    col1, col2 = st.columns([2, 1])
+
     with col1:
         start_processing = st.button("🚿 开始去水印", use_container_width=True, type="primary")
-    
+
     with col2:
         st.markdown('<div class="clear-button">', unsafe_allow_html=True)
         clear_images = st.button("🗑️ 清空图片", use_container_width=True)
@@ -1001,11 +1001,11 @@ def render_lighting_interface():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 按钮区域 - 开始处理和清空图片按钮并排
-    col1, col2 = st.columns([3, 1])
-    
+    col1, col2 = st.columns([2, 1])
+
     with col1:
         start_processing = st.button("✨ 开始溶图打光", use_container_width=True, type="primary")
-    
+
     with col2:
         st.markdown('<div class="clear-button">', unsafe_allow_html=True)
         clear_images = st.button("🗑️ 清空图片", use_container_width=True)
@@ -1087,11 +1087,11 @@ def render_pose_interface():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 按钮区域 - 开始处理和清空图片按钮并排
-    col1, col2 = st.columns([3, 1])
-    
+    col1, col2 = st.columns([2, 1])
+
     with col1:
         start_processing = st.button("🚀 开始处理", use_container_width=True, type="primary")
-    
+
     with col2:
         st.markdown('<div class="clear-button">', unsafe_allow_html=True)
         clear_images = st.button("🗑️ 清空图片", use_container_width=True)
