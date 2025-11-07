@@ -1098,11 +1098,11 @@ def render_enhance_interface():
         st.session_state.upload_success = False
 
     # 版本选择
-    st.markdown("**🔧 选择 API 版本**")
+    st.markdown("**🔧 选择大模型版本**")
     col1, col2 = st.columns(2)
     with col1:
         wan22_selected = st.button(
-            "WAN 2.2 (当前版本)",
+            "WAN2.2",
             use_container_width=True,
             type="primary" if st.session_state.enhance_version == "WAN 2.2" else "secondary"
         )
@@ -1111,7 +1111,7 @@ def render_enhance_interface():
 
     with col2:
         wan21_selected = st.button(
-            "WAN 2.1",
+            "WAN2.1",
             use_container_width=True,
             type="primary" if st.session_state.enhance_version == "WAN 2.1" else "secondary"
         )
