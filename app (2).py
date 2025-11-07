@@ -283,7 +283,7 @@ def handle_delayed_clear():
 
 # 初始化Session State
 if 'selected_function' not in st.session_state:
-    st.session_state.selected_function = "去水印"  # 默认选择去水印
+    st.session_state.selected_function = "图像优化"  # 默认选择图像优化
 if 'tasks' not in st.session_state:
     st.session_state.tasks = []
 if 'task_counter' not in st.session_state:
@@ -1208,52 +1208,13 @@ def main():
     # 处理延迟清空操作
     handle_delayed_clear()
 
-    # 侧边栏功能选择（去水印在最左侧）
+    # 侧边栏功能选择
     with st.sidebar:
         st.markdown("## 🎨 功能选择")
-        
-        # 去水印选项（最左侧）
-        watermark_selected = st.button(
-            "🚿 去水印", 
-            use_container_width=True,
-            type="primary" if st.session_state.selected_function == "去水印" else "secondary"
-        )
-        if watermark_selected and st.session_state.selected_function != "去水印":
-            st.session_state.selected_function = "去水印"
-            clear_ui_state()  # 清理UI状态
-            st.rerun()
-        
-        st.caption("智能去除图片水印")
-        
-        # 溶图打光选项
-        lighting_selected = st.button(
-            "✨ 溶图打光", 
-            use_container_width=True,
-            type="primary" if st.session_state.selected_function == "溶图打光" else "secondary"
-        )
-        if lighting_selected and st.session_state.selected_function != "溶图打光":
-            st.session_state.selected_function = "溶图打光"
-            clear_ui_state()  # 清理UI状态
-            st.rerun()
-        
-        st.caption("智能溶图打光处理")
-        
-        # 姿态迁移选项
-        pose_selected = st.button(
-            "🤸 姿态迁移", 
-            use_container_width=True,
-            type="primary" if st.session_state.selected_function == "姿态迁移" else "secondary"
-        )
-        if pose_selected and st.session_state.selected_function != "姿态迁移":
-            st.session_state.selected_function = "姿态迁移"
-            clear_ui_state()  # 清理UI状态
-            st.rerun()
-        
-        st.caption("角色图片 + 姿势参考图")
-        
-        # 图像优化选项
+
+        # 图像优化选项（第一位）
         enhance_selected = st.button(
-            "🎨 图像优化", 
+            "🎨 图像优化",
             use_container_width=True,
             type="primary" if st.session_state.selected_function == "图像优化" else "secondary"
         )
@@ -1261,8 +1222,47 @@ def main():
             st.session_state.selected_function = "图像优化"
             clear_ui_state()  # 清理UI状态
             st.rerun()
-        
-        st.caption("单图片智能优化")
+
+        st.caption("支持 WAN2.1 & WAN2.2 模型")
+
+        # 姿态迁移选项
+        pose_selected = st.button(
+            "🤸 姿态迁移",
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == "姿态迁移" else "secondary"
+        )
+        if pose_selected and st.session_state.selected_function != "姿态迁移":
+            st.session_state.selected_function = "姿态迁移"
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+
+        st.caption("角色图片 + 姿势参考图")
+
+        # 溶图打光选项
+        lighting_selected = st.button(
+            "✨ 溶图打光",
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == "溶图打光" else "secondary"
+        )
+        if lighting_selected and st.session_state.selected_function != "溶图打光":
+            st.session_state.selected_function = "溶图打光"
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+
+        st.caption("智能溶图打光处理")
+
+        # 去水印选项
+        watermark_selected = st.button(
+            "🚿 去水印",
+            use_container_width=True,
+            type="primary" if st.session_state.selected_function == "去水印" else "secondary"
+        )
+        if watermark_selected and st.session_state.selected_function != "去水印":
+            st.session_state.selected_function = "去水印"
+            clear_ui_state()  # 清理UI状态
+            st.rerun()
+
+        st.caption("智能去除图片水印")
         
         st.divider()
         
@@ -1293,15 +1293,15 @@ def main():
     st.caption(f"当前模式: **{st.session_state.selected_function}** • 全局并发限制: {MAX_CONCURRENT}")
     
     # 显示功能状态
-    if st.session_state.selected_function == "去水印":
-        st.info("ℹ️ 去水印：智能水印去除 + 延迟清空策略 + 简洁样式")
-    elif st.session_state.selected_function == "溶图打光":
-        st.info("ℹ️ 溶图打光：智能光影处理 + 延迟清空策略 + 简洁样式")
+    if st.session_state.selected_function == "图像优化":
+        st.info("ℹ️ 图像优化：支持 WAN2.1 & WAN2.2 模型 + 批量处理 + 预览功能")
     elif st.session_state.selected_function == "姿态迁移":
         st.info("ℹ️ 姿态迁移：延迟清空策略 + 简洁样式 + 清空按钮")
-    elif st.session_state.selected_function == "图像优化":
-        st.info("ℹ️ 图像优化：已更新API配置 + 批量处理 + 预览功能")
-    
+    elif st.session_state.selected_function == "溶图打光":
+        st.info("ℹ️ 溶图打光：智能光影处理 + 延迟清空策略 + 简洁样式")
+    elif st.session_state.selected_function == "去水印":
+        st.info("ℹ️ 去水印：智能水印去除 + 延迟清空策略 + 简洁样式")
+
     st.divider()
 
     # 主界面布局
@@ -1309,14 +1309,14 @@ def main():
 
     # 左侧：功能界面
     with left_col:
-        if st.session_state.selected_function == "去水印":
-            render_watermark_interface()
-        elif st.session_state.selected_function == "溶图打光":
-            render_lighting_interface()
+        if st.session_state.selected_function == "图像优化":
+            render_enhance_interface()
         elif st.session_state.selected_function == "姿态迁移":
             render_pose_interface()
-        else:
-            render_enhance_interface()
+        elif st.session_state.selected_function == "溶图打光":
+            render_lighting_interface()
+        else:  # 去水印
+            render_watermark_interface()
 
     # 右侧：任务列表
     with right_col:
