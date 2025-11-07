@@ -214,6 +214,44 @@ st.markdown("""
         margin: 0.5rem 0;
         font-size: 0.9em;
     }
+
+    /* 版本选择容器 */
+    .version-selector-container {
+        margin: 0.5rem 0 1rem 0;
+    }
+
+    /* 版本选择区域的按钮样式 - 默认白色背景 */
+    .version-selector-container button {
+        background-color: white !important;
+        color: #495057 !important;
+        border: 2px solid #dee2e6 !important;
+        font-weight: 500 !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .version-selector-container button:hover {
+        background-color: #f0f7ff !important;
+        border-color: #0066cc !important;
+        color: #0066cc !important;
+        transform: translateY(-2px);
+        box-shadow: 0 2px 8px rgba(0, 102, 204, 0.2) !important;
+    }
+
+    /* 选中标识样式 */
+    .version-selected-indicator {
+        text-align: center;
+        color: #0066cc;
+        font-size: 0.85em;
+        margin-top: -8px;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1099,27 +1137,30 @@ def render_enhance_interface():
 
     # 版本选择
     st.markdown("**🔧 选择大模型版本**")
+
+    # 添加容器标识
+    st.markdown('<div class="version-selector-container">', unsafe_allow_html=True)
+
+    # 使用列来布局两个按钮
     col1, col2 = st.columns(2)
+
     with col1:
-        wan22_selected = st.button(
-            "WAN2.2",
-            use_container_width=True,
-            type="primary" if st.session_state.enhance_version == "WAN 2.2" else "secondary"
-        )
-        if wan22_selected:
+        if st.button("WAN2.2", key="btn_wan22", use_container_width=True):
             st.session_state.enhance_version = "WAN 2.2"
+            st.rerun()
+        # 在按钮下方添加选中标识
+        if st.session_state.enhance_version == "WAN 2.2":
+            st.markdown('<div class="version-selected-indicator">✓ 已选中</div>', unsafe_allow_html=True)
 
     with col2:
-        wan21_selected = st.button(
-            "WAN2.1",
-            use_container_width=True,
-            type="primary" if st.session_state.enhance_version == "WAN 2.1" else "secondary"
-        )
-        if wan21_selected:
+        if st.button("WAN2.1", key="btn_wan21", use_container_width=True):
             st.session_state.enhance_version = "WAN 2.1"
+            st.rerun()
+        # 在按钮下方添加选中标识
+        if st.session_state.enhance_version == "WAN 2.1":
+            st.markdown('<div class="version-selected-indicator">✓ 已选中</div>', unsafe_allow_html=True)
 
-    # 显示当前选择的版本
-    st.markdown(f'<div class="file-info">当前选择: **{st.session_state.enhance_version}**</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # 图像优化保留虚线框样式
     st.markdown('<div class="upload-container">', unsafe_allow_html=True)
