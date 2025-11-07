@@ -194,16 +194,6 @@ st.markdown("""
         font-size: 0.85em;
     }
     
-    /* 清空按钮样式 */
-    .clear-button button {
-        background-color: #6c757d !important;
-        color: white !important;
-    }
-    
-    .clear-button button:hover {
-        background-color: #5a6268 !important;
-    }
-    
     /* 成功消息样式 */
     .clear-success {
         background-color: #d4edda;
@@ -957,9 +947,7 @@ def render_watermark_interface():
         start_processing = st.button("🚿 开始去水印", use_container_width=True, type="primary")
 
     with col2:
-        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
-        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空", use_container_width=True, key="clear_watermark")
 
     # 处理按钮事件
     if clear_images:
@@ -1026,9 +1014,7 @@ def render_lighting_interface():
         start_processing = st.button("✨ 开始溶图打光", use_container_width=True, type="primary")
 
     with col2:
-        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
-        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空", use_container_width=True, key="clear_lighting")
 
     # 处理按钮事件
     if clear_images:
@@ -1112,9 +1098,7 @@ def render_pose_interface():
         start_processing = st.button("🚀 开始处理", use_container_width=True, type="primary")
 
     with col2:
-        st.markdown('<div class="clear-button">', unsafe_allow_html=True)
-        clear_images = st.button("🗑️ 清空图片", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        clear_images = st.button("🗑️ 清空", use_container_width=True, key="clear_pose")
 
     # 处理按钮事件
     if clear_images:
