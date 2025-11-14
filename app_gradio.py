@@ -568,7 +568,8 @@ def add_to_queue(files, version, style, queue_state):
             "status": "pending",
             "original": None,
             "enhanced": None,
-            "error": None
+            "error": None,
+            "start_time": None  # 开始处理的时间
         }
         queue_state.append(item)
         enhance_queue_global.append(item)
@@ -618,8 +619,9 @@ def process_single_item_wrapper(item):
 def process_single_item(item):
     """处理单个图片优化任务"""
     try:
-        # 更新状态为处理中
+        # 更新状态为处理中，记录开始时间
         item["status"] = "processing"
+        item["start_time"] = time.time()  # 记录开始时间用于倒计时
         logger.info(f"📝 任务 {item['id']} 状态: pending -> processing")
 
         # 读取图片文件
@@ -732,17 +734,9 @@ def get_queue_status(queue_state):
     return queue_state, render_queue_dataframe(queue_state)
 
 def render_queue_dataframe(queue_state):
-    """渲染队列为DataFrame数据"""
+    """渲染队列为DataFrame数据（带倒计时）"""
     if not queue_state:
         return []
-
-    # 状态映射
-    status_text = {
-        "pending": "⏳ 等待中",
-        "processing": "🔄 处理中",
-        "completed": "✅ 已完成",
-        "error": "❌ 失败"
-    }
 
     # 生成DataFrame数据
     data = []
@@ -750,11 +744,46 @@ def render_queue_dataframe(queue_state):
         # 显示模型版本
         model_version = item.get("version", "---")
 
+        # 状态显示逻辑
+        status = item["status"]
+        if status == "pending":
+            status_display = "⏳ 等待中"
+        elif status == "processing":
+            # 倒计时逻辑：从2分30秒开始
+            start_time = item.get("start_time")
+            if start_time:
+                elapsed = time.time() - start_time
+                remaining = 150 - elapsed  # 150秒 = 2分30秒
+
+                if remaining > 0:
+                    # 显示倒计时
+                    minutes = int(remaining // 60)
+                    seconds = int(remaining % 60)
+                    status_display = f"预计还剩{minutes}:{seconds:02d}"
+                else:
+                    # 超时了还在处理
+                    status_display = "全力处理中~"
+            else:
+                status_display = "🔄 处理中"
+        elif status == "completed":
+            status_display = "✅ 已完成"
+        elif status == "error":
+            status_display = "❌ 失败"
+        else:
+            status_display = "未知"
+
+        # 操作列
+        view_text = "点击查看" if status == "completed" else "---"
+
+        # 下载列
+        download_text = "下载图片" if status == "completed" else "---"
+
         data.append([
             item["id"],
-            status_text.get(item["status"], "未知"),
+            status_display,
             model_version,
-            "点击查看" if item["status"] == "completed" else "---"
+            view_text,
+            download_text
         ])
 
     return data
@@ -762,7 +791,7 @@ def render_queue_dataframe(queue_state):
 def show_selected_image(evt: gr.SelectData, queue_state):
     """点击DataFrame行显示图片（统一高度800px）"""
     if not queue_state or evt.index[0] >= len(queue_state):
-        return None, None
+        return None, None, gr.update(visible=False), None
 
     item = queue_state[evt.index[0]]
 
@@ -788,9 +817,22 @@ def show_selected_image(evt: gr.SelectData, queue_state):
             new_width = int(enh_width * scale)
             enhanced_img = enhanced_img.resize((new_width, target_height), Image.LANCZOS)
 
-        return original_img, enhanced_img
+        return original_img, enhanced_img, gr.update(visible=True), item
 
-    return None, None
+    return None, None, gr.update(visible=False), None
+
+def download_enhanced_image(selected_item):
+    """下载优化后的PNG图片"""
+    if not selected_item or not selected_item.get("enhanced"):
+        return None
+
+    # 将PNG数据保存到临时文件
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f"_enhanced_{selected_item['id']}.png", mode='wb') as f:
+        f.write(selected_item["enhanced"])
+        temp_path = f.name
+
+    return temp_path
 
 def clear_queue():
     """清空队列"""
@@ -889,8 +931,8 @@ def create_interface():
                     with gr.Column(scale=4):
                         gr.Markdown("### 📊 处理队列")
                         queue_display = gr.Dataframe(
-                            headers=["ID", "状态", "模型", "操作"],
-                            datatype=["str", "str", "str", "str"],
+                            headers=["ID", "状态", "模型", "操作", "下载"],
+                            datatype=["str", "str", "str", "str", "str"],
                             label="队列列表（点击行查看详情）",
                             interactive=False
                         )
@@ -902,8 +944,14 @@ def create_interface():
                             with gr.Tab("🎨 优化后"):
                                 enhance_enhanced = gr.Image(label="优化后", show_label=False, height=600)
 
-                # 隐藏的队列状态
+                        # 下载按钮和文件组件
+                        with gr.Row():
+                            download_btn = gr.Button("📥 下载优化后图片 (PNG)", size="sm", visible=False)
+                            download_file = gr.File(label="下载", visible=False, interactive=False)
+
+                # 隐藏的队列状态和当前选中的项
                 queue_state = gr.State(value=None)
+                selected_item_state = gr.State(value=None)
 
                 # 自动处理：文件上传时自动添加到队列
                 enhance_files.upload(
@@ -916,7 +964,14 @@ def create_interface():
                 queue_display.select(
                     fn=show_selected_image,
                     inputs=[queue_state],
-                    outputs=[enhance_original, enhance_enhanced]
+                    outputs=[enhance_original, enhance_enhanced, download_btn, selected_item_state]
+                )
+
+                # 点击下载按钮下载PNG图片
+                download_btn.click(
+                    fn=download_enhanced_image,
+                    inputs=[selected_item_state],
+                    outputs=[download_file]
                 )
 
                 # 清空队列
