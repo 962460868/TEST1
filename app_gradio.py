@@ -81,130 +81,135 @@ def image_to_base64(image):
     return f"data:image/png;base64,{img_str}"
 
 def create_comparison_html(original_image, enhanced_image):
-    """创建图像对比滑块的 HTML - 默认显示优化后的图，向左滑看原图"""
-    # 保存图片到临时变量以便下载
+    """创建图像对比滑块的 HTML - 纯 JavaScript 实现，无需外部库"""
     original_b64 = image_to_base64(original_image)
     enhanced_b64 = image_to_base64(enhanced_image)
 
-    # 注意：img-comparison-slider 的 value 属性控制滑块位置，100表示完全显示第二张图（优化后）
+    # 生成唯一 ID 避免多个实例冲突
+    unique_id = f"comp_{int(time.time() * 1000)}"
+
     html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <link rel="stylesheet" href="https://unpkg.com/img-comparison-slider@8/dist/styles.css">
-        <script type="module" src="https://unpkg.com/img-comparison-slider@8/dist/index.js"></script>
-        <style>
-            .comparison-container {{
-                width: 100%;
-                max-width: 1000px;
-                margin: 20px auto;
-                padding: 20px;
-                background: #f8f9fa;
-                border-radius: 12px;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            }}
+    <div class="comparison-wrapper-{unique_id}" style="width: 100%; max-width: 1000px; margin: 20px auto; padding: 20px; background: #f8f9fa; border-radius: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+        <div class="comparison-container-{unique_id}" style="position: relative; width: 100%; overflow: hidden; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); user-select: none;">
+            <!-- 优化后的图片（底层，完整显示）-->
+            <img src="{enhanced_b64}" alt="优化后" style="display: block; width: 100%; height: auto; border-radius: 8px;">
 
-            img-comparison-slider {{
-                width: 100%;
-                border-radius: 8px;
-                overflow: hidden;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                --divider-width: 3px;
-                --divider-color: #fff;
-                --default-handle-opacity: 1;
-            }}
-
-            img-comparison-slider img {{
-                width: 100%;
-                height: auto;
-                display: block;
-            }}
-
-            .label {{
-                position: absolute;
-                top: 20px;
-                padding: 10px 20px;
-                background: rgba(0, 0, 0, 0.75);
-                color: white;
-                border-radius: 6px;
-                font-size: 15px;
-                font-weight: 600;
-                z-index: 10;
-                backdrop-filter: blur(4px);
-            }}
-
-            .label-left {{
-                left: 20px;
-            }}
-
-            .label-right {{
-                right: 20px;
-            }}
-
-            .hint {{
-                text-align: center;
-                margin-top: 20px;
-                padding: 15px;
-                background: white;
-                border-radius: 8px;
-                color: #495057;
-                font-size: 14px;
-                line-height: 1.6;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            }}
-
-            .hint strong {{
-                color: #0066cc;
-            }}
-
-            .download-btn {{
-                display: inline-block;
-                margin-top: 15px;
-                padding: 10px 24px;
-                background: #0066cc;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 600;
-                transition: all 0.3s;
-            }}
-
-            .download-btn:hover {{
-                background: #0052a3;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 8px rgba(0, 102, 204, 0.3);
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="comparison-container">
-            <div style="position: relative;">
-                <img-comparison-slider value="100" direction="horizontal" keyboard="enabled">
-                    <img slot="first" src="{original_b64}" alt="原图" />
-                    <img slot="second" src="{enhanced_b64}" alt="优化后" />
-                    <div slot="first" class="label label-left">📷 原图</div>
-                    <div slot="second" class="label label-right">✨ 优化后</div>
-                </img-comparison-slider>
+            <!-- 原图（顶层，通过 clip-path 控制显示区域）-->
+            <div class="original-overlay-{unique_id}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; clip-path: inset(0 100% 0 0);">
+                <img src="{original_b64}" alt="原图" style="display: block; width: 100%; height: auto; border-radius: 8px;">
             </div>
 
-            <div class="hint">
-                <div style="margin-bottom: 10px;">
-                    💡 <strong>使用说明</strong>：拖动中间的滑块可以对比原图和优化后的效果
+            <!-- 分割线和滑块 -->
+            <div class="slider-line-{unique_id}" style="position: absolute; top: 0; left: 0%; width: 3px; height: 100%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.5); cursor: ew-resize; z-index: 10;">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; background: white; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;">
+                    <div style="width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-right: 8px solid #666; margin-right: 2px;"></div>
+                    <div style="width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 8px solid #666; margin-left: 2px;"></div>
                 </div>
-                <div>
-                    ⬅️ <strong>向左滑动</strong>：查看原图 |
-                    ➡️ <strong>向右滑动</strong>：查看优化后 |
-                    默认显示优化后的效果
-                </div>
-                <div style="margin-top: 10px;">
-                    <a href="{enhanced_b64}" download="optimized_image.png" class="download-btn">
-                        📥 下载优化后的图片
-                    </a>
-                </div>
+            </div>
+
+            <!-- 标签 -->
+            <div style="position: absolute; top: 20px; left: 20px; padding: 10px 20px; background: rgba(0, 0, 0, 0.75); color: white; border-radius: 6px; font-size: 15px; font-weight: 600; z-index: 5; backdrop-filter: blur(4px);">
+                📷 原图
+            </div>
+            <div style="position: absolute; top: 20px; right: 20px; padding: 10px 20px; background: rgba(0, 0, 0, 0.75); color: white; border-radius: 6px; font-size: 15px; font-weight: 600; z-index: 5; backdrop-filter: blur(4px);">
+                ✨ 优化后
             </div>
         </div>
-    </body>
-    </html>
+
+        <!-- 提示信息 -->
+        <div style="text-align: center; margin-top: 20px; padding: 15px; background: white; border-radius: 8px; color: #495057; font-size: 14px; line-height: 1.6; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+            <div style="margin-bottom: 10px;">
+                💡 <strong style="color: #0066cc;">使用说明</strong>：拖动中间的滑块可以对比原图和优化后的效果
+            </div>
+            <div>
+                ⬅️ <strong style="color: #0066cc;">向左滑动</strong>：查看原图 |
+                ➡️ <strong style="color: #0066cc;">向右滑动</strong>：查看优化后 |
+                默认显示优化后的效果
+            </div>
+            <div style="margin-top: 15px;">
+                <a href="{enhanced_b64}" download="optimized_image.png" style="display: inline-block; padding: 10px 24px; background: #0066cc; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; transition: all 0.3s;">
+                    📥 下载优化后的图片
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {{
+        const container = document.querySelector('.comparison-container-{unique_id}');
+        const overlay = document.querySelector('.original-overlay-{unique_id}');
+        const sliderLine = document.querySelector('.slider-line-{unique_id}');
+
+        if (!container || !overlay || !sliderLine) return;
+
+        let isDragging = false;
+
+        // 初始化位置（默认显示优化后，即原图被完全裁剪）
+        function setPosition(percentage) {{
+            percentage = Math.max(0, Math.min(100, percentage));
+            const clipPercentage = 100 - percentage;
+            overlay.style.clipPath = `inset(0 ${{clipPercentage}}% 0 0)`;
+            sliderLine.style.left = percentage + '%';
+        }}
+
+        // 设置初始位置为 0%（完全显示优化后的图）
+        setPosition(0);
+
+        function handleMove(e) {{
+            if (!isDragging && e.type !== 'click') return;
+
+            const rect = container.getBoundingClientRect();
+            let x;
+
+            if (e.type.includes('touch')) {{
+                x = e.touches[0].clientX;
+            }} else {{
+                x = e.clientX;
+            }}
+
+            const percentage = ((x - rect.left) / rect.width) * 100;
+            setPosition(percentage);
+        }}
+
+        // 鼠标事件
+        sliderLine.addEventListener('mousedown', (e) => {{
+            isDragging = true;
+            e.preventDefault();
+        }});
+
+        document.addEventListener('mousemove', handleMove);
+
+        document.addEventListener('mouseup', () => {{
+            isDragging = false;
+        }});
+
+        // 触摸事件（移动端支持）
+        sliderLine.addEventListener('touchstart', (e) => {{
+            isDragging = true;
+            e.preventDefault();
+        }});
+
+        document.addEventListener('touchmove', handleMove);
+
+        document.addEventListener('touchend', () => {{
+            isDragging = false;
+        }});
+
+        // 点击容器直接跳转
+        container.addEventListener('click', handleMove);
+
+        // 键盘支持
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'ArrowLeft') {{
+                const currentLeft = parseFloat(sliderLine.style.left) || 0;
+                setPosition(currentLeft - 5);
+            }} else if (e.key === 'ArrowRight') {{
+                const currentLeft = parseFloat(sliderLine.style.left) || 0;
+                setPosition(currentLeft + 5);
+            }}
+        }});
+    }})();
+    </script>
     """
 
     return html
