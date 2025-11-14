@@ -8,6 +8,7 @@ import random
 import logging
 from PIL import Image
 import io
+import base64
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -70,6 +71,83 @@ CONCURRENT_LIMIT_ERRORS = [
 TIMEOUT_ERRORS = [
     "read timed out", "connection timeout", "timeout", "timed out"
 ]
+
+# --- 辅助函数 ---
+def image_to_base64(image):
+    """将 PIL Image 转换为 base64 字符串"""
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
+
+def create_comparison_html(original_image, enhanced_image):
+    """创建图像对比滑块的 HTML"""
+    original_b64 = image_to_base64(original_image)
+    enhanced_b64 = image_to_base64(enhanced_image)
+
+    html = f"""
+    <div style="width: 100%; max-width: 1200px; margin: 0 auto;">
+        <link rel="stylesheet" href="https://unpkg.com/img-comparison-slider@7/dist/styles.css">
+        <script type="module" src="https://unpkg.com/img-comparison-slider@7/dist/index.js"></script>
+
+        <style>
+            img-comparison-slider {{
+                width: 100%;
+                max-height: 800px;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+
+            img-comparison-slider img {{
+                width: 100%;
+                height: auto;
+                display: block;
+            }}
+
+            .comparison-label {{
+                position: absolute;
+                top: 10px;
+                padding: 8px 16px;
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 600;
+                z-index: 10;
+            }}
+
+            .label-left {{
+                left: 10px;
+            }}
+
+            .label-right {{
+                right: 10px;
+            }}
+
+            .comparison-hint {{
+                text-align: center;
+                margin-top: 16px;
+                color: #666;
+                font-size: 14px;
+            }}
+        </style>
+
+        <div style="position: relative;">
+            <img-comparison-slider>
+                <img slot="first" src="{enhanced_b64}" alt="优化后">
+                <img slot="second" src="{original_b64}" alt="原图">
+                <div slot="first" class="comparison-label label-left">✨ 优化后</div>
+                <div slot="second" class="comparison-label label-right">📷 原图</div>
+            </img-comparison-slider>
+        </div>
+
+        <div class="comparison-hint">
+            💡 拖动中间的滑块可以对比原图和优化后的效果 | 向左滑动查看优化后 | 向右滑动查看原图
+        </div>
+    </div>
+    """
+
+    return html
 
 # --- 核心API函数 ---
 def is_concurrent_limit_error(error_msg):
@@ -379,9 +457,12 @@ def process_pose(character_image, reference_image):
 def process_enhance(image, version):
     """图像优化处理"""
     if image is None:
-        return None, "❌ 请上传图片"
+        return None, None, "❌ 请上传图片"
 
     try:
+        # 保存原图（用于对比）
+        original_img = Image.fromarray(image)
+
         # 转换图片格式
         img = Image.fromarray(image)
         img_byte_arr = io.BytesIO()
@@ -399,7 +480,7 @@ def process_enhance(image, version):
             image_node_id = "14"
 
         # 上传文件
-        yield None, f"⏳ 正在上传图片 [{version}]..."
+        yield None, None, f"⏳ 正在上传图片 [{version}]..."
         uploaded_filename = upload_file_with_retry(img_byte_arr, "input.png", ENHANCE_API_KEY)
 
         # 构建节点信息
@@ -409,7 +490,7 @@ def process_enhance(image, version):
                 node["fieldValue"] = uploaded_filename
 
         # 启动任务
-        yield None, f"⏳ 正在启动图像优化任务 [{version}]..."
+        yield None, None, f"⏳ 正在启动图像优化任务 [{version}]..."
         task_id = run_task_with_retry(ENHANCE_API_KEY, webapp_id, node_info_list)
 
         # 轮询状态
@@ -420,7 +501,7 @@ def process_enhance(image, version):
             status = get_task_status(ENHANCE_API_KEY, task_id)
 
             progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
-            yield None, f"⏳ 处理中 [{version}]... {int(progress)}%"
+            yield None, None, f"⏳ 处理中 [{version}]... {int(progress)}%"
 
             if status == "SUCCESS":
                 break
@@ -431,17 +512,20 @@ def process_enhance(image, version):
             raise Exception("任务超时")
 
         # 获取结果
-        yield None, "⏳ 正在下载结果..."
+        yield None, None, "⏳ 正在下载结果..."
         result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
         result_data = download_result_image(result_url)
 
         # 转换为图片
         result_image = Image.open(io.BytesIO(result_data))
 
-        yield result_image, f"✅ 图像优化完成 [{version}]！"
+        # 创建对比滑块 HTML
+        comparison_html = create_comparison_html(original_img, result_image)
+
+        yield result_image, comparison_html, f"✅ 图像优化完成 [{version}]！"
 
     except Exception as e:
-        yield None, f"❌ 处理失败: {str(e)}"
+        yield None, None, f"❌ 处理失败: {str(e)}"
 
 # --- Gradio界面 ---
 def create_interface():
@@ -514,13 +598,22 @@ def create_interface():
                         enhance_input = gr.Image(label="上传需要优化的图片", type="numpy")
                         enhance_btn = gr.Button("开始图像优化", variant="primary")
                     with gr.Column():
-                        enhance_output = gr.Image(label="图像优化结果")
+                        enhance_output = gr.Image(label="优化结果（可下载）", visible=True)
                         enhance_status = gr.Textbox(label="状态", interactive=False)
+
+                # 对比滑块区域（全宽显示）
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### 📊 对比效果（拖动滑块查看）")
+                        enhance_comparison = gr.HTML(
+                            label="原图 vs 优化后对比",
+                            visible=True
+                        )
 
                 enhance_btn.click(
                     fn=process_enhance,
                     inputs=[enhance_input, enhance_version],
-                    outputs=[enhance_output, enhance_status]
+                    outputs=[enhance_output, enhance_comparison, enhance_status]
                 )
 
         gr.Markdown("""
@@ -530,6 +623,8 @@ def create_interface():
         - **溶图打光**：智能溶图打光处理，提升图片光影效果
         - **姿态迁移**：需要同时上传角色图片和姿势参考图
         - **图像优化**：支持 WAN 2.1 和 WAN 2.2 两个模型版本
+          - ✨ **滑动对比功能**：处理完成后，可以拖动中间的滑块对比原图和优化后的效果
+          - 向左滑动查看优化后的图片，向右滑动查看原图
         """)
 
     return demo
