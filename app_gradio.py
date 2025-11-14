@@ -81,21 +81,37 @@ def image_to_base64(image):
     return f"data:image/png;base64,{img_str}"
 
 def create_comparison_html(original_image, enhanced_image):
-    """创建图像对比滑块的 HTML"""
+    """创建图像对比滑块的 HTML - 默认显示优化后的图，向左滑看原图"""
+    # 保存图片到临时变量以便下载
     original_b64 = image_to_base64(original_image)
     enhanced_b64 = image_to_base64(enhanced_image)
 
+    # 注意：img-comparison-slider 的 value 属性控制滑块位置，100表示完全显示第二张图（优化后）
     html = f"""
-    <div style="width: 100%; max-width: 1200px; margin: 0 auto;">
-        <link rel="stylesheet" href="https://unpkg.com/img-comparison-slider@7/dist/styles.css">
-        <script type="module" src="https://unpkg.com/img-comparison-slider@7/dist/index.js"></script>
-
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <link rel="stylesheet" href="https://unpkg.com/img-comparison-slider@8/dist/styles.css">
+        <script type="module" src="https://unpkg.com/img-comparison-slider@8/dist/index.js"></script>
         <style>
+            .comparison-container {{
+                width: 100%;
+                max-width: 1000px;
+                margin: 20px auto;
+                padding: 20px;
+                background: #f8f9fa;
+                border-radius: 12px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }}
+
             img-comparison-slider {{
                 width: 100%;
-                max-height: 800px;
                 border-radius: 8px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                --divider-width: 3px;
+                --divider-color: #fff;
+                --default-handle-opacity: 1;
             }}
 
             img-comparison-slider img {{
@@ -104,47 +120,91 @@ def create_comparison_html(original_image, enhanced_image):
                 display: block;
             }}
 
-            .comparison-label {{
+            .label {{
                 position: absolute;
-                top: 10px;
-                padding: 8px 16px;
-                background: rgba(0, 0, 0, 0.7);
+                top: 20px;
+                padding: 10px 20px;
+                background: rgba(0, 0, 0, 0.75);
                 color: white;
-                border-radius: 4px;
-                font-size: 14px;
+                border-radius: 6px;
+                font-size: 15px;
                 font-weight: 600;
                 z-index: 10;
+                backdrop-filter: blur(4px);
             }}
 
             .label-left {{
-                left: 10px;
+                left: 20px;
             }}
 
             .label-right {{
-                right: 10px;
+                right: 20px;
             }}
 
-            .comparison-hint {{
+            .hint {{
                 text-align: center;
-                margin-top: 16px;
-                color: #666;
+                margin-top: 20px;
+                padding: 15px;
+                background: white;
+                border-radius: 8px;
+                color: #495057;
                 font-size: 14px;
+                line-height: 1.6;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            }}
+
+            .hint strong {{
+                color: #0066cc;
+            }}
+
+            .download-btn {{
+                display: inline-block;
+                margin-top: 15px;
+                padding: 10px 24px;
+                background: #0066cc;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: 600;
+                transition: all 0.3s;
+            }}
+
+            .download-btn:hover {{
+                background: #0052a3;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 8px rgba(0, 102, 204, 0.3);
             }}
         </style>
+    </head>
+    <body>
+        <div class="comparison-container">
+            <div style="position: relative;">
+                <img-comparison-slider value="100" direction="horizontal" keyboard="enabled">
+                    <img slot="first" src="{original_b64}" alt="原图" />
+                    <img slot="second" src="{enhanced_b64}" alt="优化后" />
+                    <div slot="first" class="label label-left">📷 原图</div>
+                    <div slot="second" class="label label-right">✨ 优化后</div>
+                </img-comparison-slider>
+            </div>
 
-        <div style="position: relative;">
-            <img-comparison-slider>
-                <img slot="first" src="{enhanced_b64}" alt="优化后">
-                <img slot="second" src="{original_b64}" alt="原图">
-                <div slot="first" class="comparison-label label-left">✨ 优化后</div>
-                <div slot="second" class="comparison-label label-right">📷 原图</div>
-            </img-comparison-slider>
+            <div class="hint">
+                <div style="margin-bottom: 10px;">
+                    💡 <strong>使用说明</strong>：拖动中间的滑块可以对比原图和优化后的效果
+                </div>
+                <div>
+                    ⬅️ <strong>向左滑动</strong>：查看原图 |
+                    ➡️ <strong>向右滑动</strong>：查看优化后 |
+                    默认显示优化后的效果
+                </div>
+                <div style="margin-top: 10px;">
+                    <a href="{enhanced_b64}" download="optimized_image.png" class="download-btn">
+                        📥 下载优化后的图片
+                    </a>
+                </div>
+            </div>
         </div>
-
-        <div class="comparison-hint">
-            💡 拖动中间的滑块可以对比原图和优化后的效果 | 向左滑动查看优化后 | 向右滑动查看原图
-        </div>
-    </div>
+    </body>
+    </html>
     """
 
     return html
@@ -455,9 +515,9 @@ def process_pose(character_image, reference_image):
         yield None, f"❌ 处理失败: {str(e)}"
 
 def process_enhance(image, version):
-    """图像优化处理"""
+    """图像优化处理 - 返回对比滑块"""
     if image is None:
-        return None, None, "❌ 请上传图片"
+        return None, "❌ 请上传图片"
 
     try:
         # 保存原图（用于对比）
@@ -480,7 +540,7 @@ def process_enhance(image, version):
             image_node_id = "14"
 
         # 上传文件
-        yield None, None, f"⏳ 正在上传图片 [{version}]..."
+        yield None, f"⏳ 正在上传图片 [{version}]..."
         uploaded_filename = upload_file_with_retry(img_byte_arr, "input.png", ENHANCE_API_KEY)
 
         # 构建节点信息
@@ -490,7 +550,7 @@ def process_enhance(image, version):
                 node["fieldValue"] = uploaded_filename
 
         # 启动任务
-        yield None, None, f"⏳ 正在启动图像优化任务 [{version}]..."
+        yield None, f"⏳ 正在启动图像优化任务 [{version}]..."
         task_id = run_task_with_retry(ENHANCE_API_KEY, webapp_id, node_info_list)
 
         # 轮询状态
@@ -501,7 +561,7 @@ def process_enhance(image, version):
             status = get_task_status(ENHANCE_API_KEY, task_id)
 
             progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
-            yield None, None, f"⏳ 处理中 [{version}]... {int(progress)}%"
+            yield None, f"⏳ 处理中 [{version}]... {int(progress)}%"
 
             if status == "SUCCESS":
                 break
@@ -512,7 +572,7 @@ def process_enhance(image, version):
             raise Exception("任务超时")
 
         # 获取结果
-        yield None, None, "⏳ 正在下载结果..."
+        yield None, "⏳ 正在下载结果..."
         result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
         result_data = download_result_image(result_url)
 
@@ -522,10 +582,11 @@ def process_enhance(image, version):
         # 创建对比滑块 HTML
         comparison_html = create_comparison_html(original_img, result_image)
 
-        yield result_image, comparison_html, f"✅ 图像优化完成 [{version}]！"
+        # 只返回对比 HTML 和状态
+        yield comparison_html, f"✅ 图像优化完成 [{version}]！拖动滑块对比效果，点击下方按钮下载图片"
 
     except Exception as e:
-        yield None, None, f"❌ 处理失败: {str(e)}"
+        yield None, f"❌ 处理失败: {str(e)}"
 
 # --- Gradio界面 ---
 def create_interface():
@@ -589,31 +650,28 @@ def create_interface():
             # 图像优化
             with gr.Tab("🎨 图像优化"):
                 with gr.Row():
-                    with gr.Column():
+                    with gr.Column(scale=2):
                         enhance_version = gr.Radio(
                             choices=["WAN 2.2", "WAN 2.1"],
                             value="WAN 2.2",
                             label="选择模型版本"
                         )
                         enhance_input = gr.Image(label="上传需要优化的图片", type="numpy")
-                        enhance_btn = gr.Button("开始图像优化", variant="primary")
-                    with gr.Column():
-                        enhance_output = gr.Image(label="优化结果（可下载）", visible=True)
-                        enhance_status = gr.Textbox(label="状态", interactive=False)
+                        enhance_btn = gr.Button("开始图像优化", variant="primary", size="lg")
+                        enhance_status = gr.Textbox(label="处理状态", interactive=False)
 
-                # 对比滑块区域（全宽显示）
-                with gr.Row():
-                    with gr.Column():
-                        gr.Markdown("### 📊 对比效果（拖动滑块查看）")
+                    with gr.Column(scale=3):
+                        gr.Markdown("### 📊 优化效果对比")
                         enhance_comparison = gr.HTML(
-                            label="原图 vs 优化后对比",
-                            visible=True
+                            value="<div style='text-align: center; padding: 60px; color: #999; background: #f8f9fa; border-radius: 8px; border: 2px dashed #ddd;'>⬅️ 上传图片并点击优化按钮开始处理</div>",
+                            label="",
+                            show_label=False
                         )
 
                 enhance_btn.click(
                     fn=process_enhance,
                     inputs=[enhance_input, enhance_version],
-                    outputs=[enhance_output, enhance_comparison, enhance_status]
+                    outputs=[enhance_comparison, enhance_status]
                 )
 
         gr.Markdown("""
@@ -623,8 +681,10 @@ def create_interface():
         - **溶图打光**：智能溶图打光处理，提升图片光影效果
         - **姿态迁移**：需要同时上传角色图片和姿势参考图
         - **图像优化**：支持 WAN 2.1 和 WAN 2.2 两个模型版本
-          - ✨ **滑动对比功能**：处理完成后，可以拖动中间的滑块对比原图和优化后的效果
-          - 向左滑动查看优化后的图片，向右滑动查看原图
+          - ✨ **滑动对比功能**：处理完成后显示对比滑块，默认显示优化后的效果
+          - ⬅️ **向左滑动**：查看原图
+          - ➡️ **向右滑动**：查看优化后的效果
+          - 📥 点击对比区域下方的下载按钮保存优化后的图片
         """)
 
     return demo
