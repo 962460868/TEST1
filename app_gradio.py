@@ -531,7 +531,7 @@ def add_to_queue(files, version, queue_state):
     global enhance_queue_global
 
     if not files:
-        return None, queue_state, render_queue_html(queue_state), "⚠️ 未选择文件"
+        return None, queue_state, render_queue_dataframe(queue_state), "⚠️ 未选择文件"
 
     # 初始化队列
     if queue_state is None:
@@ -556,7 +556,7 @@ def add_to_queue(files, version, queue_state):
     start_background_processing()
 
     # 清空文件选择器并更新显示
-    return None, queue_state, render_queue_html(queue_state), f"📋 已添加 {len(files)} 个文件到队列"
+    return None, queue_state, render_queue_dataframe(queue_state), f"📋 已添加 {len(files)} 个文件到队列"
 
 def start_background_processing():
     """启动后台处理线程"""
@@ -669,115 +669,63 @@ def process_single_item(item):
 def get_queue_status(queue_state):
     """获取队列状态（定时刷新）"""
     if queue_state is None:
-        return queue_state, render_queue_html(queue_state)
-    return queue_state, render_queue_html(queue_state)
+        return queue_state, []
+    return queue_state, render_queue_dataframe(queue_state)
 
-def render_queue_html(queue_state):
-    """渲染队列为HTML展示"""
+def render_queue_dataframe(queue_state):
+    """渲染队列为DataFrame数据"""
     if not queue_state:
-        return "<div style='text-align:center; padding:40px; color:#888;'>暂无图片</div>"
+        return []
 
-    html = "<div style='max-height: 80vh; overflow-y: auto;'>"
-
-    for item in queue_state:
-        item_id = item["id"]
-        status = item["status"]
-
-        # 状态样式
-        status_colors = {
-            "pending": "#FFA500",
-            "processing": "#1E90FF",
-            "completed": "#32CD32",
-            "error": "#DC143C"
-        }
-        status_text = {
-            "pending": "等待中",
-            "processing": "处理中...",
-            "completed": "已完成",
-            "error": "失败"
-        }
-
-        color = status_colors.get(status, "#888")
-        text = status_text.get(status, "未知")
-
-        # 图片容器
-        html += f"""
-        <div style='border: 2px solid {color}; border-radius: 8px; padding: 15px; margin-bottom: 20px; background: #f9f9f9;'>
-            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
-                <span style='font-weight: bold; color: {color};'>🔖 {item_id}</span>
-                <span style='background: {color}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;'>{text}</span>
-            </div>
-        """
-
-        # 如果完成，显示图片和切换按钮
-        if status == "completed" and item["original"] and item["enhanced"]:
-            # 转换图片为base64
-            original_b64 = base64.b64encode(item["original"]).decode()
-            enhanced_b64 = base64.b64encode(item["enhanced"]).decode()
-
-            # 计算缩放尺寸（高度800px）
-            img = Image.open(io.BytesIO(item["original"]))
-            orig_width, orig_height = img.size
-            scale = 800 / orig_height
-            new_width = int(orig_width * scale)
-            new_height = 800
-
-            html += f"""
-            <div style='position: relative; width: {new_width}px; margin: 0 auto;'>
-                <img id='img_{item_id}_original' src='data:image/png;base64,{original_b64}'
-                     style='width: {new_width}px; height: {new_height}px; display: none; border-radius: 4px;' />
-                <img id='img_{item_id}_enhanced' src='data:image/png;base64,{enhanced_b64}'
-                     style='width: {new_width}px; height: {new_height}px; display: block; border-radius: 4px;' />
-
-                <div style='position: absolute; top: 15px; left: 15px;
-                            display: flex; gap: 8px; background: rgba(0,0,0,0.75); padding: 6px; border-radius: 15px;'>
-                    <button onclick='showImage("{item_id}", "original")'
-                            style='background: white; border: none; padding: 6px 16px; border-radius: 12px;
-                                   cursor: pointer; font-weight: bold; color: #333; font-size: 13px;'>📷 原图</button>
-                    <button onclick='showImage("{item_id}", "enhanced")'
-                            style='background: #1E90FF; border: none; padding: 6px 16px; border-radius: 12px;
-                                   cursor: pointer; font-weight: bold; color: white; font-size: 13px;'>🎨 优化后</button>
-                </div>
-
-                <div style='margin-top: 10px; display: flex; justify-content: center;'>
-                    <a href='data:image/png;base64,{enhanced_b64}' download='enhanced_{item_id}.png'
-                       style='background: #2196F3; color: white; padding: 8px 20px; border-radius: 4px;
-                              text-decoration: none; font-size: 14px; font-weight: bold;'>⬇️ 下载优化图</a>
-                </div>
-            </div>
-            """
-        elif status == "error":
-            html += f"<div style='color: red; padding: 10px; background: #ffe6e6; border-radius: 4px;'>❌ {item.get('error', '未知错误')}</div>"
-
-        html += "</div>"
-
-    html += "</div>"
-
-    # 添加JavaScript
-    html += """
-    <script>
-    function showImage(itemId, type) {
-        const originalImg = document.getElementById('img_' + itemId + '_original');
-        const enhancedImg = document.getElementById('img_' + itemId + '_enhanced');
-
-        if (type === 'original') {
-            originalImg.style.display = 'block';
-            enhancedImg.style.display = 'none';
-        } else {
-            originalImg.style.display = 'none';
-            enhancedImg.style.display = 'block';
-        }
+    # 状态映射
+    status_text = {
+        "pending": "⏳ 等待中",
+        "processing": "🔄 处理中",
+        "completed": "✅ 已完成",
+        "error": "❌ 失败"
     }
-    </script>
-    """
 
-    return html
+    # 生成DataFrame数据
+    data = []
+    for item in queue_state:
+        # 计算图片尺寸
+        size_info = "---"
+        if item["status"] == "completed" and item["original"]:
+            try:
+                img = Image.open(io.BytesIO(item["original"]))
+                size_info = f"{img.size[0]}×{img.size[1]}"
+            except:
+                size_info = "未知"
+
+        data.append([
+            item["id"],
+            status_text.get(item["status"], "未知"),
+            size_info,
+            "点击查看" if item["status"] == "completed" else "---"
+        ])
+
+    return data
+
+def show_selected_image(evt: gr.SelectData, queue_state):
+    """点击DataFrame行显示图片"""
+    if not queue_state or evt.index[0] >= len(queue_state):
+        return None, None
+
+    item = queue_state[evt.index[0]]
+
+    if item["status"] == "completed" and item["original"] and item["enhanced"]:
+        # 转换为PIL Image
+        original_img = Image.open(io.BytesIO(item["original"]))
+        enhanced_img = Image.open(io.BytesIO(item["enhanced"]))
+        return original_img, enhanced_img
+
+    return None, None
 
 def clear_queue():
     """清空队列"""
     global enhance_queue_global
     enhance_queue_global = []
-    return None, "<div style='text-align:center; padding:40px; color:#888;'>暂无图片</div>", "✅ 队列已清空"
+    return None, [], "✅ 队列已清空"
 
 # --- Gradio界面 ---
 def create_interface():
@@ -838,7 +786,7 @@ def create_interface():
                     outputs=[pose_output, pose_status]
                 )
 
-            # 图像优化（队列上传 - 自动处理）
+            # 图像优化（队列上传 - 自动处理 + DataFrame列表）
             with gr.Tab("🎨 图像优化"):
                 with gr.Row():
                     # 左侧：上传和控制区（缩小占比）
@@ -864,9 +812,19 @@ def create_interface():
                     # 右侧：队列展示区
                     with gr.Column(scale=4):
                         gr.Markdown("### 📊 处理队列")
-                        queue_display = gr.HTML(
-                            value="<div style='text-align:center; padding:40px; color:#888;'>暂无图片</div>"
+                        queue_display = gr.Dataframe(
+                            headers=["ID", "状态", "尺寸", "操作"],
+                            datatype=["str", "str", "str", "str"],
+                            label="队列列表（点击行查看详情）",
+                            interactive=False
                         )
+
+                        gr.Markdown("#### 🖼️ 图片查看（点击列表行查看，Tabs切换对比）")
+                        with gr.Tabs():
+                            with gr.Tab("📷 原图"):
+                                enhance_original = gr.Image(label="原图", show_label=False, height=600)
+                            with gr.Tab("🎨 优化后"):
+                                enhance_enhanced = gr.Image(label="优化后", show_label=False, height=600)
 
                 # 隐藏的队列状态
                 queue_state = gr.State(value=None)
@@ -876,6 +834,13 @@ def create_interface():
                     fn=add_to_queue,
                     inputs=[enhance_files, enhance_version, queue_state],
                     outputs=[enhance_files, queue_state, queue_display, enhance_status]
+                )
+
+                # 点击列表行显示图片
+                queue_display.select(
+                    fn=show_selected_image,
+                    inputs=[queue_state],
+                    outputs=[enhance_original, enhance_enhanced]
                 )
 
                 # 清空队列
@@ -898,12 +863,14 @@ def create_interface():
         - **去水印**：智能去除图片中的水印，保持图片主体完整
         - **溶图打光**：智能溶图打光处理，提升图片光影效果
         - **姿态迁移**：需要同时上传角色图片和姿势参考图
-        - **图像优化**：支持队列上传和批量处理
+        - **图像优化**：支持队列上传和批量处理（DataFrame列表 + Tabs切换）
           - 📤 支持多图片同时上传（拖拽或点击选择）
           - 🔄 自动队列处理，无需等待上一张完成
-          - 🎨 每张图片固定高度800px，宽度按比例缩放
-          - 📷 点击图片底部按钮切换"原图"和"优化后"查看
-          - 📥 每张图片都有独立下载按钮，格式为PNG
+          - 📊 轻量级列表展示，实时显示处理状态
+          - 🖱️ 点击列表行查看图片详情
+          - 📷 通过Tabs切换查看原图和优化后的对比
+          - 💾 图片固定高度600px，宽度按比例缩放
+          - 📥 右键点击图片可保存，格式为PNG
           - 🗑️ 可随时清空队列重新开始
         """)
 
