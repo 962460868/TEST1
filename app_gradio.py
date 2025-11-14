@@ -528,7 +528,27 @@ processing_lock = threading.Lock()
 executor = ThreadPoolExecutor(max_workers=5)  # 5并发
 active_tasks = set()  # 跟踪活跃任务
 
-def add_to_queue(files, version, queue_state):
+# --- 风格提示词预设 ---
+STYLE_PROMPTS = {
+    "默认": {
+        "positive": "",
+        "negative": ""
+    },
+    "写实": {
+        "positive": "photorealistic, 8k uhd, raw photo, dslr, soft lighting, high quality, film grain, Fujifilm XT3, sharp focus, detailed skin texture, volumetric fog, cinematic composition, (specific lighting: natural light/golden hour/studio lighting), shot on 35mm/50mm/85mm lens, bokeh, ultra detailed, professional photography",
+        "negative": "cartoon, cg, 3d render, unreal, anime, illustration, painting, sketch, drawing, artwork, low quality, blurry, pixelated, jpeg artifacts, bad anatomy, deformed, mutated, disfigured, poorly drawn face, extra limbs, duplicate, worst quality, watermark, signature, text"
+    },
+    "3D卡通": {
+        "positive": "3d render, pixar style, disney style, octane render, blender, unreal engine 5, cute character design, stylized, volumetric lighting, soft shadows, vibrant colors, high detail, 8k, cartoon aesthetic, smooth surfaces, professional 3d artwork, trending on artstation, perfect topology, clean geometry",
+        "negative": "realistic, photorealistic, real photo, photograph, 2d, flat, sketch, low poly, low quality, blurry, pixelated, bad anatomy, deformed, poorly modeled, bad topology, artifacts, glitches, worst quality, low detail, amateur, noise, grain, dirty render"
+    },
+    "二次元": {
+        "positive": "(masterpiece:1.2), (best quality:1.2), (ultra detailed:1.2), anime style, illustration, high resolution, perfect anatomy, beautiful detailed eyes, detailed face, vibrant colors, soft shading, cel shading, clean lineart, smooth lines, depth of field, bokeh effect, official art, trending on pixiv, by (artist style if needed)",
+        "negative": "realistic, photorealistic, 3d, cg render, low quality, worst quality, normal quality, bad anatomy, bad hands, bad fingers, extra fingers, missing fingers, poorly drawn hands, poorly drawn face, deformed, ugly, mutated, disfigured, fused fingers, extra limbs, duplicate, blurry, pixelated, jpeg artifacts, watermark, signature, username, text, out of frame, cropped"
+    }
+}
+
+def add_to_queue(files, version, style, queue_state):
     """添加文件到队列（自动触发）"""
     global enhance_queue_global
 
@@ -546,6 +566,7 @@ def add_to_queue(files, version, queue_state):
             "id": file_id,
             "file": file,
             "version": version,
+            "style": style,  # 添加风格参数
             "status": "pending",
             "original": None,
             "enhanced": None,
@@ -632,6 +653,31 @@ def process_single_item(item):
         for node in node_info_list:
             if node["nodeId"] == image_node_id:
                 node["fieldValue"] = uploaded_filename
+
+        # 添加风格提示词（如果不是默认风格）
+        style = item.get("style", "默认")
+        if style != "默认" and style in STYLE_PROMPTS:
+            prompts = STYLE_PROMPTS[style]
+
+            # 添加正向提示词（nodeId 60）
+            if prompts["positive"]:
+                node_info_list.append({
+                    "nodeId": "60",
+                    "fieldName": "text",
+                    "fieldValue": prompts["positive"],
+                    "description": "正向提示词补充"
+                })
+
+            # 添加反向提示词（nodeId 4）
+            if prompts["negative"]:
+                node_info_list.append({
+                    "nodeId": "4",
+                    "fieldName": "text",
+                    "fieldValue": prompts["negative"],
+                    "description": "反向提示词"
+                })
+
+            logger.info(f"🎨 任务 {item['id']} 应用风格: {style}")
 
         # 启动任务
         logger.info(f"🎬 任务 {item['id']} 提交API处理请求 [{version}]")
@@ -817,6 +863,11 @@ def create_interface():
                             value="WAN 2.2",
                             label="模型版本"
                         )
+                        enhance_style = gr.Radio(
+                            choices=["默认", "写实", "3D卡通", "二次元"],
+                            value="默认",
+                            label="风格"
+                        )
                         enhance_files = gr.File(
                             label="选择图片（支持多选）",
                             file_count="multiple",
@@ -851,7 +902,7 @@ def create_interface():
                 # 自动处理：文件上传时自动添加到队列
                 enhance_files.upload(
                     fn=add_to_queue,
-                    inputs=[enhance_files, enhance_version, queue_state],
+                    inputs=[enhance_files, enhance_version, enhance_style, queue_state],
                     outputs=[enhance_files, queue_state, queue_display, enhance_status]
                 )
 
