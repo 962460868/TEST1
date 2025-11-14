@@ -3,6 +3,7 @@ import requests
 import time
 from datetime import datetime
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 import random
 import logging
@@ -520,11 +521,12 @@ def process_pose(character_image, reference_image):
     except Exception as e:
         yield None, f"❌ 处理失败: {str(e)}"
 
-# --- 队列管理（支持并发） ---
+# --- 队列管理（支持5并发） ---
 # 全局队列和处理标志
 enhance_queue_global = []
 processing_lock = threading.Lock()
-is_processing = False
+executor = ThreadPoolExecutor(max_workers=5)  # 5并发
+active_tasks = set()  # 跟踪活跃任务
 
 def add_to_queue(files, version, queue_state):
     """添加文件到队列（自动触发）"""
@@ -559,41 +561,39 @@ def add_to_queue(files, version, queue_state):
     return None, queue_state, render_queue_dataframe(queue_state), f"📋 已添加 {len(files)} 个文件到队列"
 
 def start_background_processing():
-    """启动后台处理线程"""
-    global is_processing
+    """启动后台处理线程（支持5并发）"""
+    global active_tasks
 
     with processing_lock:
-        if not is_processing and enhance_queue_global:
-            is_processing = True
-            thread = threading.Thread(target=background_processor, daemon=True)
-            thread.start()
+        # 获取所有待处理的任务
+        pending_tasks = [task for task in enhance_queue_global if task["status"] == "pending"]
 
-def background_processor():
-    """后台处理队列中的任务"""
-    global enhance_queue_global, is_processing
+        # 计算可以启动的新任务数量
+        available_slots = 5 - len(active_tasks)
 
-    while enhance_queue_global:
-        # 获取下一个待处理的任务
-        item = None
+        # 提交新任务到线程池
+        for task in pending_tasks[:available_slots]:
+            if task["id"] not in active_tasks:
+                active_tasks.add(task["id"])
+                executor.submit(process_single_item_wrapper, task)
+
+def process_single_item_wrapper(item):
+    """包装器：处理单个任务并更新活跃任务集"""
+    global active_tasks
+
+    try:
+        process_single_item(item)
+    except Exception as e:
+        logger.error(f"处理任务失败: {e}")
+        item["status"] = "error"
+        item["error"] = str(e)
+    finally:
+        # 任务完成后从活跃集合中移除
         with processing_lock:
-            for task in enhance_queue_global:
-                if task["status"] == "pending":
-                    item = task
-                    break
+            active_tasks.discard(item["id"])
 
-        if item is None:
-            break
-
-        try:
-            # 处理任务
-            process_single_item(item)
-        except Exception as e:
-            logger.error(f"处理任务失败: {e}")
-            item["status"] = "error"
-            item["error"] = str(e)
-
-    with processing_lock:
-        is_processing = False
+        # 尝试启动下一个任务
+        start_background_processing()
 
 def process_single_item(item):
     """处理单个图片优化任务"""
@@ -688,26 +688,20 @@ def render_queue_dataframe(queue_state):
     # 生成DataFrame数据
     data = []
     for item in queue_state:
-        # 计算图片尺寸
-        size_info = "---"
-        if item["status"] == "completed" and item["original"]:
-            try:
-                img = Image.open(io.BytesIO(item["original"]))
-                size_info = f"{img.size[0]}×{img.size[1]}"
-            except:
-                size_info = "未知"
+        # 显示模型版本
+        model_version = item.get("version", "---")
 
         data.append([
             item["id"],
             status_text.get(item["status"], "未知"),
-            size_info,
+            model_version,
             "点击查看" if item["status"] == "completed" else "---"
         ])
 
     return data
 
 def show_selected_image(evt: gr.SelectData, queue_state):
-    """点击DataFrame行显示图片"""
+    """点击DataFrame行显示图片（统一高度800px）"""
     if not queue_state or evt.index[0] >= len(queue_state):
         return None, None
 
@@ -717,6 +711,24 @@ def show_selected_image(evt: gr.SelectData, queue_state):
         # 转换为PIL Image
         original_img = Image.open(io.BytesIO(item["original"]))
         enhanced_img = Image.open(io.BytesIO(item["enhanced"]))
+
+        # 统一高度到800px，保持宽高比
+        target_height = 800
+
+        # 调整原图大小
+        orig_width, orig_height = original_img.size
+        if orig_height != target_height:
+            scale = target_height / orig_height
+            new_width = int(orig_width * scale)
+            original_img = original_img.resize((new_width, target_height), Image.LANCZOS)
+
+        # 调整优化图大小
+        enh_width, enh_height = enhanced_img.size
+        if enh_height != target_height:
+            scale = target_height / enh_height
+            new_width = int(enh_width * scale)
+            enhanced_img = enhanced_img.resize((new_width, target_height), Image.LANCZOS)
+
         return original_img, enhanced_img
 
     return None, None
@@ -813,7 +825,7 @@ def create_interface():
                     with gr.Column(scale=4):
                         gr.Markdown("### 📊 处理队列")
                         queue_display = gr.Dataframe(
-                            headers=["ID", "状态", "尺寸", "操作"],
+                            headers=["ID", "状态", "模型", "操作"],
                             datatype=["str", "str", "str", "str"],
                             label="队列列表（点击行查看详情）",
                             interactive=False
