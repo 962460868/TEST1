@@ -575,6 +575,7 @@ def start_background_processing():
         for task in pending_tasks[:available_slots]:
             if task["id"] not in active_tasks:
                 active_tasks.add(task["id"])
+                logger.info(f"🚀 提交任务到线程池: {task['id']} (当前活跃: {len(active_tasks)}/5)")
                 executor.submit(process_single_item_wrapper, task)
 
 def process_single_item_wrapper(item):
@@ -600,6 +601,7 @@ def process_single_item(item):
     try:
         # 更新状态为处理中
         item["status"] = "processing"
+        logger.info(f"📝 任务 {item['id']} 状态: pending -> processing")
 
         # 读取图片文件
         img_data = item["file"]
@@ -622,6 +624,7 @@ def process_single_item(item):
             image_node_id = "14"
 
         # 上传文件
+        logger.info(f"⬆️ 任务 {item['id']} 开始上传文件到API")
         uploaded_filename = upload_file_with_retry(item["original"], f"input_{item['id']}.png", ENHANCE_API_KEY)
 
         # 构建节点信息
@@ -631,6 +634,7 @@ def process_single_item(item):
                 node["fieldValue"] = uploaded_filename
 
         # 启动任务
+        logger.info(f"🎬 任务 {item['id']} 提交API处理请求 [{version}]")
         task_id = run_task_with_retry(ENHANCE_API_KEY, webapp_id, node_info_list)
 
         # 轮询状态
@@ -649,6 +653,7 @@ def process_single_item(item):
             raise Exception("任务超时")
 
         # 获取结果
+        logger.info(f"⬇️ 任务 {item['id']} 开始下载结果")
         result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
         result_data = download_result_image(result_url)
 
@@ -660,10 +665,12 @@ def process_single_item(item):
 
         # 更新状态为完成
         item["status"] = "completed"
+        logger.info(f"✅ 任务 {item['id']} 完成！状态: processing -> completed")
 
     except Exception as e:
         item["status"] = "error"
         item["error"] = str(e)
+        logger.error(f"❌ 任务 {item['id']} 失败: {str(e)}")
         raise
 
 def get_queue_status(queue_state):
@@ -861,8 +868,8 @@ def create_interface():
                     outputs=[queue_state, queue_display, enhance_status]
                 )
 
-                # 定时刷新队列显示
-                timer = gr.Timer(value=2, active=True)
+                # 定时刷新队列显示（0.5秒更新一次，更及时）
+                timer = gr.Timer(value=0.5, active=True)
                 timer.tick(
                     fn=get_queue_status,
                     inputs=[queue_state],
