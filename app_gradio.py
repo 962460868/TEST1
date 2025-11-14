@@ -39,7 +39,7 @@ POSE_NODE_INFO = [
     {"nodeId": "244", "fieldName": "image", "fieldValue": "placeholder.png", "description": "姿势参考图"}
 ]
 
-# 图像优化 WAN 2.2
+# 图像优化 WAN 2.2 (新版API，支持正反提示词)
 ENHANCE_API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
 ENHANCE_WEBAPP_ID_V2_2 = "1986501194824773634"
 ENHANCE_NODE_INFO_V2_2 = [
@@ -49,9 +49,7 @@ ENHANCE_NODE_INFO_V2_2 = [
 # 图像优化 WAN 2.1
 ENHANCE_WEBAPP_ID_V2_1 = "1947599512657453057"
 ENHANCE_NODE_INFO_V2_1 = [
-    {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"},
-    {"nodeId": "60", "fieldName": "text", "fieldValue": "8k, high quality, high detail", "description": "正向提示词补充"},
-    {"nodeId": "4", "fieldName": "text", "fieldValue": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走", "description": "反向提示词"}
+    {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"}
 ]
 
 # 系统配置
@@ -659,25 +657,33 @@ def process_single_item(item):
         if style != "默认" and style in STYLE_PROMPTS:
             prompts = STYLE_PROMPTS[style]
 
-            # 添加正向提示词（nodeId 60）
+            # 根据版本选择不同的nodeId
+            if version == "WAN 2.2":
+                positive_node_id = "66"  # WAN 2.2的正向提示词节点
+                negative_node_id = "21"  # WAN 2.2的反向提示词节点
+            else:  # WAN 2.1
+                positive_node_id = "60"  # WAN 2.1的正向提示词节点
+                negative_node_id = "4"   # WAN 2.1的反向提示词节点
+
+            # 添加正向提示词
             if prompts["positive"]:
                 node_info_list.append({
-                    "nodeId": "60",
+                    "nodeId": positive_node_id,
                     "fieldName": "text",
                     "fieldValue": prompts["positive"],
-                    "description": "正向提示词补充"
+                    "description": "text"
                 })
 
-            # 添加反向提示词（nodeId 4）
+            # 添加反向提示词
             if prompts["negative"]:
                 node_info_list.append({
-                    "nodeId": "4",
+                    "nodeId": negative_node_id,
                     "fieldName": "text",
                     "fieldValue": prompts["negative"],
-                    "description": "反向提示词"
+                    "description": "text"
                 })
 
-            logger.info(f"🎨 任务 {item['id']} 应用风格: {style}")
+            logger.info(f"🎨 任务 {item['id']} 应用风格: {style} [正向节点:{positive_node_id}, 反向节点:{negative_node_id}]")
 
         # 启动任务
         logger.info(f"🎬 任务 {item['id']} 提交API处理请求 [{version}]")
