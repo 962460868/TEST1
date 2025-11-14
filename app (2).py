@@ -851,16 +851,127 @@ def show_file_info(image_file, file_type="image"):
             </div>
             ''', unsafe_allow_html=True)
 
-# --- 9. 下载按钮组件 ---
+# --- 9. 下载按钮和图片预览组件 ---
+def create_image_preview_with_tabs(task):
+    """使用Tabs切换显示原图和处理后的图片（完全重叠）"""
+    from PIL import Image
+    import io
+
+    # 对于单图任务（去水印、溶图打光、图像优化）
+    if task.task_type in ["watermark", "lighting", "enhance"] and task.result_data:
+        # 创建两个标签页：原图和处理后
+        tab1, tab2 = st.tabs(["📷 原图", "✨ 处理后"])
+
+        with tab1:
+            # 显示原图
+            try:
+                original_image = Image.open(io.BytesIO(task.file_data))
+                st.image(original_image, caption="原始图片", use_container_width=True)
+
+                # 显示原图信息
+                width, height = original_image.size
+                file_size = len(task.file_data) / 1024
+                st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+            except Exception as e:
+                st.error(f"无法显示原图: {str(e)}")
+
+        with tab2:
+            # 显示处理后的图片
+            try:
+                result_image = Image.open(io.BytesIO(task.result_data))
+                st.image(result_image, caption="处理后的图片", use_container_width=True)
+
+                # 显示结果图信息
+                width, height = result_image.size
+                file_size = len(task.result_data) / 1024
+                st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+            except Exception as e:
+                st.error(f"无法显示结果图: {str(e)}")
+
+    # 对于姿态迁移任务
+    elif task.task_type == "pose" and task.result_data_list:
+        # 如果只有一个结果，显示原图（角色图和参考图）和结果图
+        if len(task.result_data_list) == 1:
+            tab1, tab2, tab3 = st.tabs(["👤 角色图", "🤸 参考图", "✨ 结果"])
+
+            with tab1:
+                try:
+                    char_image = Image.open(io.BytesIO(task.character_image_data))
+                    st.image(char_image, caption="角色图片", use_container_width=True)
+                    width, height = char_image.size
+                    file_size = len(task.character_image_data) / 1024
+                    st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+                except Exception as e:
+                    st.error(f"无法显示角色图: {str(e)}")
+
+            with tab2:
+                try:
+                    ref_image = Image.open(io.BytesIO(task.reference_image_data))
+                    st.image(ref_image, caption="姿势参考图", use_container_width=True)
+                    width, height = ref_image.size
+                    file_size = len(task.reference_image_data) / 1024
+                    st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+                except Exception as e:
+                    st.error(f"无法显示参考图: {str(e)}")
+
+            with tab3:
+                try:
+                    result = task.result_data_list[0]
+                    result_image = Image.open(io.BytesIO(result['data']))
+                    st.image(result_image, caption="姿态迁移结果", use_container_width=True)
+                    width, height = result_image.size
+                    file_size = len(result['data']) / 1024
+                    st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+                except Exception as e:
+                    st.error(f"无法显示结果图: {str(e)}")
+        else:
+            # 多个结果时，显示原图和多个结果
+            tabs_list = ["👤 角色图", "🤸 参考图"] + [f"✨ 结果{i+1}" for i in range(len(task.result_data_list))]
+            tabs = st.tabs(tabs_list)
+
+            # 角色图
+            with tabs[0]:
+                try:
+                    char_image = Image.open(io.BytesIO(task.character_image_data))
+                    st.image(char_image, caption="角色图片", use_container_width=True)
+                    width, height = char_image.size
+                    file_size = len(task.character_image_data) / 1024
+                    st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+                except Exception as e:
+                    st.error(f"无法显示角色图: {str(e)}")
+
+            # 参考图
+            with tabs[1]:
+                try:
+                    ref_image = Image.open(io.BytesIO(task.reference_image_data))
+                    st.image(ref_image, caption="姿势参考图", use_container_width=True)
+                    width, height = ref_image.size
+                    file_size = len(task.reference_image_data) / 1024
+                    st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+                except Exception as e:
+                    st.error(f"无法显示参考图: {str(e)}")
+
+            # 多个结果
+            for i, result in enumerate(task.result_data_list):
+                with tabs[i+2]:
+                    try:
+                        result_image = Image.open(io.BytesIO(result['data']))
+                        st.image(result_image, caption=f"姿态迁移结果 {i+1}", use_container_width=True)
+                        width, height = result_image.size
+                        file_size = len(result['data']) / 1024
+                        st.caption(f"📏 尺寸: {width} × {height} px | 📦 大小: {file_size:.1f} KB")
+                    except Exception as e:
+                        st.error(f"无法显示结果图{i+1}: {str(e)}")
+
 def create_download_buttons(task):
     """创建下载按钮"""
     if task.task_type == "pose" and task.result_data_list:
         st.markdown("### 📥 下载结果")
-        
+
         if len(task.result_data_list) == 1:
             result = task.result_data_list[0]
             file_size = len(result['data']) / 1024
-            
+
             st.download_button(
                 label=f"📥 下载结果 ({file_size:.1f}KB)",
                 data=result['data'],
@@ -871,12 +982,12 @@ def create_download_buttons(task):
             )
         else:
             cols = st.columns(min(len(task.result_data_list), 3))
-            
+
             for i, result in enumerate(task.result_data_list):
                 col_idx = i % len(cols)
                 with cols[col_idx]:
                     file_size = len(result['data']) / 1024
-                    
+
                     st.download_button(
                         label=f"📥 结果{i+1} ({file_size:.1f}KB)",
                         data=result['data'],
@@ -885,10 +996,10 @@ def create_download_buttons(task):
                         key=f"download_{task.task_id}_{i}",
                         use_container_width=True
                     )
-    
+
     elif task.task_type in ["watermark", "lighting", "enhance"] and task.result_data:
         file_size = len(task.result_data) / 1024
-        
+
         if task.task_type == "watermark":
             button_text = f"📥 下载去水印结果 ({file_size:.1f}KB)"
             file_prefix = "watermark_removed_"
@@ -898,7 +1009,7 @@ def create_download_buttons(task):
         else:
             button_text = f"📥 下载优化结果 ({file_size:.1f}KB)"
             file_prefix = "optimized_"
-        
+
         st.download_button(
             label=button_text,
             data=task.result_data,
@@ -1357,7 +1468,7 @@ def main():
                     # 结果处理
                     if task.status == "SUCCESS":
                         elapsed_str = f"{int(task.elapsed_time//60)}:{int(task.elapsed_time%60):02d}"
-                        
+
                         if task.task_type == "watermark":
                             st.success(f"🚿 去水印完成! 用时: {elapsed_str}")
                         elif task.task_type == "lighting":
@@ -1367,7 +1478,11 @@ def main():
                             st.success(f"🎉 姿态迁移完成! 用时: {elapsed_str} | 生成了 {result_count} 个结果")
                         else:
                             st.success(f"🎉 图像优化完成! 用时: {elapsed_str}")
-                        
+
+                        # 显示图片预览（使用Tabs切换）
+                        create_image_preview_with_tabs(task)
+
+                        # 显示下载按钮
                         create_download_buttons(task)
 
                     elif task.status == "FAILED":
