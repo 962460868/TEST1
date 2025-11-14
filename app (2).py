@@ -7,9 +7,6 @@ import copy
 import random
 import logging
 import streamlit.components.v1 as components
-import json
-import os
-import base64
 
 # --- 1. 页面配置和全局设置 ---
 
@@ -73,14 +70,10 @@ ACTUAL_TIMEOUT_MINUTES = 20
 
 # 超时配置
 UPLOAD_TIMEOUT = 120
-RUN_TASK_TIMEOUT = 60
+RUN_TASK_TIMEOUT = 60  
 STATUS_CHECK_TIMEOUT = 25
 OUTPUT_FETCH_TIMEOUT = 90
 IMAGE_DOWNLOAD_TIMEOUT = 120
-
-# 存储配置
-STORAGE_DIR = ".storage"
-TASKS_FILE = os.path.join(STORAGE_DIR, "tasks.json")
 
 # 错误关键词
 CONCURRENT_LIMIT_ERRORS = [
@@ -252,156 +245,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 任务持久化存储 ---
-def ensure_storage_dir():
-    """确保存储目录存在"""
-    if not os.path.exists(STORAGE_DIR):
-        os.makedirs(STORAGE_DIR)
-
-def serialize_task(task):
-    """将任务对象序列化为可保存的字典"""
-    task_dict = {
-        'task_id': task.task_id,
-        'task_type': task.task_type,
-        'session_id': task.session_id,
-        'status': task.status,
-        'progress': task.progress,
-        'error_message': task.error_message,
-        'api_task_id': task.api_task_id,
-        'created_at': task.created_at.isoformat() if task.created_at else None,
-        'start_time': task.start_time,
-        'elapsed_time': task.elapsed_time,
-        'retry_count': task.retry_count,
-        'timeout_count': task.timeout_count,
-    }
-
-    # 根据任务类型保存特定属性
-    if task.task_type == "watermark":
-        task_dict['file_name'] = task.file_name
-        # 只保存结果数据，不保存原始文件数据（节省空间）
-        if task.result_data:
-            task_dict['result_data'] = base64.b64encode(task.result_data).decode('utf-8')
-
-    elif task.task_type == "lighting":
-        task_dict['file_name'] = task.file_name
-        if task.result_data:
-            task_dict['result_data'] = base64.b64encode(task.result_data).decode('utf-8')
-
-    elif task.task_type == "pose":
-        task_dict['character_image_name'] = task.character_image_name
-        task_dict['reference_image_name'] = task.reference_image_name
-        if task.result_data_list:
-            task_dict['result_data_list'] = [
-                {
-                    'filename': r['filename'],
-                    'data': base64.b64encode(r['data']).decode('utf-8')
-                } for r in task.result_data_list
-            ]
-
-    elif task.task_type == "enhance":
-        task_dict['file_name'] = task.file_name
-        task_dict['enhance_version'] = getattr(task, 'enhance_version', 'WAN 2.2')
-        if task.result_data:
-            task_dict['result_data'] = base64.b64encode(task.result_data).decode('utf-8')
-
-    return task_dict
-
-def deserialize_task(task_dict):
-    """从字典恢复任务对象（只恢复已完成的任务）"""
-    # 只恢复已完成或失败的任务
-    if task_dict['status'] not in ['SUCCESS', 'FAILED']:
-        return None
-
-    task_type = task_dict['task_type']
-
-    # 创建kwargs
-    kwargs = {}
-
-    if task_type == "watermark":
-        kwargs['file_name'] = task_dict['file_name']
-        kwargs['file_data'] = b''  # 不恢复原始数据
-    elif task_type == "lighting":
-        kwargs['file_name'] = task_dict['file_name']
-        kwargs['file_data'] = b''
-    elif task_type == "pose":
-        kwargs['character_image_name'] = task_dict['character_image_name']
-        kwargs['reference_image_name'] = task_dict['reference_image_name']
-        kwargs['character_image_data'] = b''
-        kwargs['reference_image_data'] = b''
-    elif task_type == "enhance":
-        kwargs['file_name'] = task_dict['file_name']
-        kwargs['file_data'] = b''
-        kwargs['enhance_version'] = task_dict.get('enhance_version', 'WAN 2.2')
-
-    # 创建任务对象
-    task = TaskItem(
-        task_dict['task_id'],
-        task_type,
-        task_dict['session_id'],
-        **kwargs
-    )
-
-    # 恢复状态
-    task.status = task_dict['status']
-    task.progress = task_dict['progress']
-    task.error_message = task_dict.get('error_message')
-    task.api_task_id = task_dict.get('api_task_id')
-    task.retry_count = task_dict.get('retry_count', 0)
-    task.timeout_count = task_dict.get('timeout_count', 0)
-    task.elapsed_time = task_dict.get('elapsed_time')
-
-    if task_dict.get('created_at'):
-        task.created_at = datetime.fromisoformat(task_dict['created_at'])
-
-    # 恢复结果数据
-    if task_type == "pose" and task_dict.get('result_data_list'):
-        task.result_data_list = [
-            {
-                'filename': r['filename'],
-                'data': base64.b64decode(r['data']),
-                'url': None
-            } for r in task_dict['result_data_list']
-        ]
-    elif task_dict.get('result_data'):
-        task.result_data = base64.b64decode(task_dict['result_data'])
-
-    return task
-
-def save_tasks():
-    """保存所有任务到文件"""
-    try:
-        ensure_storage_dir()
-        # 只保存已完成或失败的任务（节省空间和处理时间）
-        tasks_to_save = [t for t in st.session_state.tasks if t.status in ['SUCCESS', 'FAILED']]
-        tasks_data = [serialize_task(task) for task in tasks_to_save]
-
-        with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(tasks_data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        # 静默失败，不影响主流程
-        print(f"保存任务失败: {e}")
-
-def load_tasks():
-    """从文件加载任务"""
-    try:
-        if not os.path.exists(TASKS_FILE):
-            return []
-
-        with open(TASKS_FILE, 'r', encoding='utf-8') as f:
-            tasks_data = json.load(f)
-
-        tasks = []
-        for task_dict in tasks_data:
-            task = deserialize_task(task_dict)
-            if task:
-                tasks.append(task)
-
-        return tasks
-    except Exception as e:
-        print(f"加载任务失败: {e}")
-        return []
-
-# --- 4. Session State管理 ---
+# --- 3. Session State管理 ---
 def get_session_key():
     if 'session_id' not in st.session_state:
         st.session_state.session_id = f"s_{int(time.time())}_{random.randint(100, 999)}"
@@ -443,15 +287,9 @@ def handle_delayed_clear():
 if 'selected_function' not in st.session_state:
     st.session_state.selected_function = "图像优化"  # 默认选择图像优化
 if 'tasks' not in st.session_state:
-    # 首次启动时从文件加载任务
-    st.session_state.tasks = load_tasks()
+    st.session_state.tasks = []
 if 'task_counter' not in st.session_state:
-    # 从已有任务中获取最大的 task_id，避免 ID 冲突
-    if st.session_state.tasks:
-        max_task_id = max(task.task_id for task in st.session_state.tasks)
-        st.session_state.task_counter = max_task_id
-    else:
-        st.session_state.task_counter = 0
+    st.session_state.task_counter = 0
 # 为每个功能创建独立的文件上传器key
 if 'watermark_uploader_key' not in st.session_state:
     st.session_state.watermark_uploader_key = 0
@@ -902,13 +740,9 @@ def process_single_task(task):
         process_pose_task(task)
     elif task.task_type == "enhance":
         process_enhance_task(task)
-
+    
     if task.status == "SUCCESS":
         task.elapsed_time = time.time() - task.start_time
-
-    # 任务完成或失败后保存到文件
-    if task.status in ["SUCCESS", "FAILED"]:
-        save_tasks()
 
 # --- 7. 队列管理 ---
 def get_stats():
@@ -1555,7 +1389,6 @@ def main():
                     st.session_state.tasks = []
                     st.session_state.task_queue = []
                     st.session_state.download_clicked = {}
-                    save_tasks()  # 清空后保存
                     st.rerun()
 
             with col2:
