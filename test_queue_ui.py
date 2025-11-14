@@ -472,9 +472,9 @@ def create_interface():
                               outputs=[page_num, page_info, img8_1_orig, img8_1_enh, img8_2_orig, img8_2_enh])
 
             # ========== 方案9 ==========
-            with gr.Tab("方案9️⃣ DataFrame列表"):
-                gr.Markdown("### 策略：使用DataFrame显示列表，点击查看大图")
-                gr.Markdown("优点：轻量级列表；缺点：需要点击查看")
+            with gr.Tab("方案9️⃣ DataFrame列表 + Tabs切换"):
+                gr.Markdown("### 策略：使用DataFrame显示列表，点击查看大图，Tabs切换原图/优化图")
+                gr.Markdown("✅ 优点：轻量级列表 + 重叠显示节省空间 + 快速切换")
 
                 btn9 = gr.Button("生成测试结果", variant="primary")
                 queue9 = gr.State()
@@ -485,9 +485,12 @@ def create_interface():
                     label="处理结果列表"
                 )
 
-                with gr.Row():
-                    img9_orig = gr.Image(label="原图", show_label=True)
-                    img9_enh = gr.Image(label="优化后", show_label=True)
+                gr.Markdown("#### 📊 图片查看（点击列表行查看，Tabs切换对比）")
+                with gr.Tabs():
+                    with gr.Tab("📷 原图"):
+                        img9_orig = gr.Image(label="原图", show_label=False, height=600)
+                    with gr.Tab("🎨 优化后"):
+                        img9_enh = gr.Image(label="优化后", show_label=False, height=600)
 
                 def on_generate9():
                     data, queue = method9_generate()
@@ -537,7 +540,7 @@ def create_interface():
             | 6️⃣ | 降低刷新 | 减少刷新导致的卡顿 |
             | 7️⃣ | 文件URL | 大图片，避免base64 |
             | 8️⃣ | 分页显示 | 结果很多，分批查看 |
-            | 9️⃣ | DataFrame列表 | 轻量级列表展示 |
+            | 9️⃣ | DataFrame列表 + Tabs切换 | 轻量级列表 + 重叠显示 |
             | 🔟 | 极简模式 | 关注最新结果，性能优先 |
 
             ## 评估标准
