@@ -520,9 +520,9 @@ def process_pose(character_image, reference_image):
         yield None, f"❌ 处理失败: {str(e)}"
 
 def process_enhance(image, version):
-    """图像优化处理 - 返回对比滑块"""
+    """图像优化处理 - 返回原图和优化后的图片"""
     if image is None:
-        return None, "❌ 请上传图片"
+        return None, None, None, "❌ 请上传图片"
 
     try:
         # 保存原图（用于对比）
@@ -545,7 +545,7 @@ def process_enhance(image, version):
             image_node_id = "14"
 
         # 上传文件
-        yield None, f"⏳ 正在上传图片 [{version}]..."
+        yield None, None, None, f"⏳ 正在上传图片 [{version}]..."
         uploaded_filename = upload_file_with_retry(img_byte_arr, "input.png", ENHANCE_API_KEY)
 
         # 构建节点信息
@@ -555,7 +555,7 @@ def process_enhance(image, version):
                 node["fieldValue"] = uploaded_filename
 
         # 启动任务
-        yield None, f"⏳ 正在启动图像优化任务 [{version}]..."
+        yield None, None, None, f"⏳ 正在启动图像优化任务 [{version}]..."
         task_id = run_task_with_retry(ENHANCE_API_KEY, webapp_id, node_info_list)
 
         # 轮询状态
@@ -566,7 +566,7 @@ def process_enhance(image, version):
             status = get_task_status(ENHANCE_API_KEY, task_id)
 
             progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
-            yield None, f"⏳ 处理中 [{version}]... {int(progress)}%"
+            yield None, None, None, f"⏳ 处理中 [{version}]... {int(progress)}%"
 
             if status == "SUCCESS":
                 break
@@ -577,21 +577,18 @@ def process_enhance(image, version):
             raise Exception("任务超时")
 
         # 获取结果
-        yield None, "⏳ 正在下载结果..."
+        yield None, None, None, "⏳ 正在下载结果..."
         result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
         result_data = download_result_image(result_url)
 
         # 转换为图片
         result_image = Image.open(io.BytesIO(result_data))
 
-        # 创建对比滑块 HTML
-        comparison_html = create_comparison_html(original_img, result_image)
-
-        # 只返回对比 HTML 和状态
-        yield comparison_html, f"✅ 图像优化完成 [{version}]！拖动滑块对比效果，点击下方按钮下载图片"
+        # 返回优化后的图片（默认显示）、原图、优化图（用于按钮切换）
+        yield result_image, original_img, result_image, f"✅ 图像优化完成 [{version}]！使用下方按钮切换查看原图和优化后的对比"
 
     except Exception as e:
-        yield None, f"❌ 处理失败: {str(e)}"
+        yield None, None, None, f"❌ 处理失败: {str(e)}"
 
 # --- Gradio界面 ---
 def create_interface():
@@ -667,16 +664,37 @@ def create_interface():
 
                     with gr.Column(scale=3):
                         gr.Markdown("### 📊 优化效果对比")
-                        enhance_comparison = gr.HTML(
-                            value="<div style='text-align: center; padding: 60px; color: #999; background: #f8f9fa; border-radius: 8px; border: 2px dashed #ddd;'>⬅️ 上传图片并点击优化按钮开始处理</div>",
-                            label="",
-                            show_label=False
-                        )
 
+                        # 图片显示区域
+                        enhance_output = gr.Image(label="对比查看", show_label=True)
+
+                        # 切换按钮
+                        with gr.Row():
+                            btn_show_enhanced = gr.Button("🎨 显示优化后", variant="primary", size="lg")
+                            btn_show_original = gr.Button("📷 显示原图", size="lg")
+
+                        # 隐藏的状态变量（存储原图和优化图）
+                        stored_original = gr.State()
+                        stored_enhanced = gr.State()
+
+                # 处理优化
                 enhance_btn.click(
                     fn=process_enhance,
                     inputs=[enhance_input, enhance_version],
-                    outputs=[enhance_comparison, enhance_status]
+                    outputs=[enhance_output, stored_original, stored_enhanced, enhance_status]
+                )
+
+                # 按钮切换
+                btn_show_enhanced.click(
+                    fn=lambda x: x,
+                    inputs=[stored_enhanced],
+                    outputs=[enhance_output]
+                )
+
+                btn_show_original.click(
+                    fn=lambda x: x,
+                    inputs=[stored_original],
+                    outputs=[enhance_output]
                 )
 
         gr.Markdown("""
@@ -686,10 +704,9 @@ def create_interface():
         - **溶图打光**：智能溶图打光处理，提升图片光影效果
         - **姿态迁移**：需要同时上传角色图片和姿势参考图
         - **图像优化**：支持 WAN 2.1 和 WAN 2.2 两个模型版本
-          - ✨ **滑动对比功能**：处理完成后显示对比滑块，默认显示优化后的效果
-          - ⬅️ **向左滑动**：查看原图
-          - ➡️ **向右滑动**：查看优化后的效果
-          - 📥 点击对比区域下方的下载按钮保存优化后的图片
+          - 🎨 处理完成后，默认显示优化后的效果
+          - 🔄 使用"显示优化后"和"显示原图"按钮切换查看对比
+          - 📥 右键点击图片可以保存到本地
         """)
 
     return demo
