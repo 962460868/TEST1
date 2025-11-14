@@ -520,11 +520,18 @@ def process_pose(character_image, reference_image):
     except Exception as e:
         yield None, f"❌ 处理失败: {str(e)}"
 
-# --- 队列管理 ---
-def process_enhance_queue(files, version, queue_state):
-    """处理图像优化队列"""
+# --- 队列管理（支持并发） ---
+# 全局队列和处理标志
+enhance_queue_global = []
+processing_lock = threading.Lock()
+is_processing = False
+
+def add_to_queue(files, version, queue_state):
+    """添加文件到队列（自动触发）"""
+    global enhance_queue_global
+
     if not files:
-        return queue_state, render_queue_html(queue_state), "❌ 请上传图片"
+        return None, queue_state, render_queue_html(queue_state), "⚠️ 未选择文件"
 
     # 初始化队列
     if queue_state is None:
@@ -533,101 +540,137 @@ def process_enhance_queue(files, version, queue_state):
     # 添加新文件到队列
     for file in files:
         file_id = str(uuid.uuid4())[:8]
-        queue_state.append({
+        item = {
             "id": file_id,
             "file": file,
+            "version": version,
             "status": "pending",
             "original": None,
             "enhanced": None,
             "error": None
-        })
+        }
+        queue_state.append(item)
+        enhance_queue_global.append(item)
 
-    yield queue_state, render_queue_html(queue_state), f"📋 已添加 {len(files)} 个文件到队列"
+    # 启动后台处理（如果未在处理中）
+    start_background_processing()
 
-    # 逐个处理队列中的文件
-    for i, item in enumerate(queue_state):
-        if item["status"] != "pending":
-            continue
+    # 清空文件选择器并更新显示
+    return None, queue_state, render_queue_html(queue_state), f"📋 已添加 {len(files)} 个文件到队列"
+
+def start_background_processing():
+    """启动后台处理线程"""
+    global is_processing
+
+    with processing_lock:
+        if not is_processing and enhance_queue_global:
+            is_processing = True
+            thread = threading.Thread(target=background_processor, daemon=True)
+            thread.start()
+
+def background_processor():
+    """后台处理队列中的任务"""
+    global enhance_queue_global, is_processing
+
+    while enhance_queue_global:
+        # 获取下一个待处理的任务
+        item = None
+        with processing_lock:
+            for task in enhance_queue_global:
+                if task["status"] == "pending":
+                    item = task
+                    break
+
+        if item is None:
+            break
 
         try:
-            # 更新状态为处理中
-            item["status"] = "processing"
-            yield queue_state, render_queue_html(queue_state), f"⏳ 正在处理 {i+1}/{len(queue_state)}"
-
-            # 读取图片文件
-            img_data = item["file"]
-            img = Image.open(io.BytesIO(img_data))
-
-            # 保存原图（转为PNG）
-            original_buffer = io.BytesIO()
-            img.save(original_buffer, format='PNG')
-            item["original"] = original_buffer.getvalue()
-
-            # 根据版本选择配置
-            if version == "WAN 2.1":
-                webapp_id = ENHANCE_WEBAPP_ID_V2_1
-                node_info = ENHANCE_NODE_INFO_V2_1
-                image_node_id = "38"
-            else:  # WAN 2.2
-                webapp_id = ENHANCE_WEBAPP_ID_V2_2
-                node_info = ENHANCE_NODE_INFO_V2_2
-                image_node_id = "14"
-
-            # 上传文件
-            yield queue_state, render_queue_html(queue_state), f"⏳ 上传中 {i+1}/{len(queue_state)} [{version}]"
-            uploaded_filename = upload_file_with_retry(item["original"], f"input_{item['id']}.png", ENHANCE_API_KEY)
-
-            # 构建节点信息
-            node_info_list = copy.deepcopy(node_info)
-            for node in node_info_list:
-                if node["nodeId"] == image_node_id:
-                    node["fieldValue"] = uploaded_filename
-
-            # 启动任务
-            yield queue_state, render_queue_html(queue_state), f"⏳ 启动任务 {i+1}/{len(queue_state)} [{version}]"
-            task_id = run_task_with_retry(ENHANCE_API_KEY, webapp_id, node_info_list)
-
-            # 轮询状态
-            poll_count = 0
-            while poll_count < MAX_POLL_COUNT:
-                time.sleep(POLL_INTERVAL)
-                poll_count += 1
-                status = get_task_status(ENHANCE_API_KEY, task_id)
-
-                progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
-                yield queue_state, render_queue_html(queue_state), f"⏳ 处理中 {i+1}/{len(queue_state)} {int(progress)}%"
-
-                if status == "SUCCESS":
-                    break
-                elif status == "FAILED":
-                    raise Exception("API任务处理失败")
-
-            if poll_count >= MAX_POLL_COUNT:
-                raise Exception("任务超时")
-
-            # 获取结果
-            yield queue_state, render_queue_html(queue_state), f"⏳ 下载结果 {i+1}/{len(queue_state)}"
-            result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
-            result_data = download_result_image(result_url)
-
-            # 保存优化后的图片（PNG格式）
-            result_image = Image.open(io.BytesIO(result_data))
-            enhanced_buffer = io.BytesIO()
-            result_image.save(enhanced_buffer, format='PNG')
-            item["enhanced"] = enhanced_buffer.getvalue()
-
-            # 更新状态为完成
-            item["status"] = "completed"
-            yield queue_state, render_queue_html(queue_state), f"✅ 完成 {i+1}/{len(queue_state)}"
-
+            # 处理任务
+            process_single_item(item)
         except Exception as e:
+            logger.error(f"处理任务失败: {e}")
             item["status"] = "error"
             item["error"] = str(e)
-            yield queue_state, render_queue_html(queue_state), f"❌ 失败 {i+1}/{len(queue_state)}: {str(e)}"
 
-    # 全部完成
-    completed_count = sum(1 for item in queue_state if item["status"] == "completed")
-    yield queue_state, render_queue_html(queue_state), f"🎉 全部完成！成功 {completed_count}/{len(queue_state)}"
+    with processing_lock:
+        is_processing = False
+
+def process_single_item(item):
+    """处理单个图片优化任务"""
+    try:
+        # 更新状态为处理中
+        item["status"] = "processing"
+
+        # 读取图片文件
+        img_data = item["file"]
+        img = Image.open(io.BytesIO(img_data))
+
+        # 保存原图（转为PNG）
+        original_buffer = io.BytesIO()
+        img.save(original_buffer, format='PNG')
+        item["original"] = original_buffer.getvalue()
+
+        # 根据版本选择配置
+        version = item["version"]
+        if version == "WAN 2.1":
+            webapp_id = ENHANCE_WEBAPP_ID_V2_1
+            node_info = ENHANCE_NODE_INFO_V2_1
+            image_node_id = "38"
+        else:  # WAN 2.2
+            webapp_id = ENHANCE_WEBAPP_ID_V2_2
+            node_info = ENHANCE_NODE_INFO_V2_2
+            image_node_id = "14"
+
+        # 上传文件
+        uploaded_filename = upload_file_with_retry(item["original"], f"input_{item['id']}.png", ENHANCE_API_KEY)
+
+        # 构建节点信息
+        node_info_list = copy.deepcopy(node_info)
+        for node in node_info_list:
+            if node["nodeId"] == image_node_id:
+                node["fieldValue"] = uploaded_filename
+
+        # 启动任务
+        task_id = run_task_with_retry(ENHANCE_API_KEY, webapp_id, node_info_list)
+
+        # 轮询状态
+        poll_count = 0
+        while poll_count < MAX_POLL_COUNT:
+            time.sleep(POLL_INTERVAL)
+            poll_count += 1
+            status = get_task_status(ENHANCE_API_KEY, task_id)
+
+            if status == "SUCCESS":
+                break
+            elif status == "FAILED":
+                raise Exception("API任务处理失败")
+
+        if poll_count >= MAX_POLL_COUNT:
+            raise Exception("任务超时")
+
+        # 获取结果
+        result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
+        result_data = download_result_image(result_url)
+
+        # 保存优化后的图片（PNG格式）
+        result_image = Image.open(io.BytesIO(result_data))
+        enhanced_buffer = io.BytesIO()
+        result_image.save(enhanced_buffer, format='PNG')
+        item["enhanced"] = enhanced_buffer.getvalue()
+
+        # 更新状态为完成
+        item["status"] = "completed"
+
+    except Exception as e:
+        item["status"] = "error"
+        item["error"] = str(e)
+        raise
+
+def get_queue_status(queue_state):
+    """获取队列状态（定时刷新）"""
+    if queue_state is None:
+        return queue_state, render_queue_html(queue_state)
+    return queue_state, render_queue_html(queue_state)
 
 def render_queue_html(queue_state):
     """渲染队列为HTML展示"""
@@ -686,23 +729,20 @@ def render_queue_html(queue_state):
                 <img id='img_{item_id}_enhanced' src='data:image/png;base64,{enhanced_b64}'
                      style='width: {new_width}px; height: {new_height}px; display: block; border-radius: 4px;' />
 
-                <div style='position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-                            display: flex; gap: 10px; background: rgba(0,0,0,0.7); padding: 8px; border-radius: 20px;'>
+                <div style='position: absolute; top: 15px; left: 15px;
+                            display: flex; gap: 8px; background: rgba(0,0,0,0.75); padding: 6px; border-radius: 15px;'>
                     <button onclick='showImage("{item_id}", "original")'
-                            style='background: white; border: none; padding: 8px 20px; border-radius: 15px;
-                                   cursor: pointer; font-weight: bold; color: #333;'>📷 原图</button>
+                            style='background: white; border: none; padding: 6px 16px; border-radius: 12px;
+                                   cursor: pointer; font-weight: bold; color: #333; font-size: 13px;'>📷 原图</button>
                     <button onclick='showImage("{item_id}", "enhanced")'
-                            style='background: #1E90FF; border: none; padding: 8px 20px; border-radius: 15px;
-                                   cursor: pointer; font-weight: bold; color: white;'>🎨 优化后</button>
+                            style='background: #1E90FF; border: none; padding: 6px 16px; border-radius: 12px;
+                                   cursor: pointer; font-weight: bold; color: white; font-size: 13px;'>🎨 优化后</button>
                 </div>
 
-                <div style='margin-top: 10px; display: flex; gap: 10px; justify-content: center;'>
-                    <a href='data:image/png;base64,{original_b64}' download='original_{item_id}.png'
-                       style='background: #4CAF50; color: white; padding: 6px 16px; border-radius: 4px;
-                              text-decoration: none; font-size: 13px;'>⬇️ 下载原图</a>
+                <div style='margin-top: 10px; display: flex; justify-content: center;'>
                     <a href='data:image/png;base64,{enhanced_b64}' download='enhanced_{item_id}.png'
-                       style='background: #2196F3; color: white; padding: 6px 16px; border-radius: 4px;
-                              text-decoration: none; font-size: 13px;'>⬇️ 下载优化图</a>
+                       style='background: #2196F3; color: white; padding: 8px 20px; border-radius: 4px;
+                              text-decoration: none; font-size: 14px; font-weight: bold;'>⬇️ 下载优化图</a>
                 </div>
             </div>
             """
@@ -735,6 +775,8 @@ def render_queue_html(queue_state):
 
 def clear_queue():
     """清空队列"""
+    global enhance_queue_global
+    enhance_queue_global = []
     return None, "<div style='text-align:center; padding:40px; color:#888;'>暂无图片</div>", "✅ 队列已清空"
 
 # --- Gradio界面 ---
@@ -796,12 +838,13 @@ def create_interface():
                     outputs=[pose_output, pose_status]
                 )
 
-            # 图像优化（队列上传）
+            # 图像优化（队列上传 - 自动处理）
             with gr.Tab("🎨 图像优化"):
                 with gr.Row():
                     # 左侧：上传和控制区（缩小占比）
                     with gr.Column(scale=1):
                         gr.Markdown("### 📤 上传图片")
+                        gr.Markdown("*拖拽或点击选择，自动进入队列*")
                         enhance_version = gr.Radio(
                             choices=["WAN 2.2", "WAN 2.1"],
                             value="WAN 2.2",
@@ -813,7 +856,6 @@ def create_interface():
                             file_types=["image"],
                             type="binary"
                         )
-                        enhance_btn = gr.Button("🚀 开始处理", variant="primary", size="lg")
                         clear_btn = gr.Button("🗑️ 清空队列", size="sm")
 
                         gr.Markdown("---")
@@ -829,17 +871,25 @@ def create_interface():
                 # 隐藏的队列状态
                 queue_state = gr.State(value=None)
 
-                # 处理队列
-                enhance_btn.click(
-                    fn=process_enhance_queue,
+                # 自动处理：文件上传时自动添加到队列
+                enhance_files.upload(
+                    fn=add_to_queue,
                     inputs=[enhance_files, enhance_version, queue_state],
-                    outputs=[queue_state, queue_display, enhance_status]
+                    outputs=[enhance_files, queue_state, queue_display, enhance_status]
                 )
 
                 # 清空队列
                 clear_btn.click(
                     fn=clear_queue,
                     outputs=[queue_state, queue_display, enhance_status]
+                )
+
+                # 定时刷新队列显示
+                timer = gr.Timer(value=2, active=True)
+                timer.tick(
+                    fn=get_queue_status,
+                    inputs=[queue_state],
+                    outputs=[queue_state, queue_display]
                 )
 
         gr.Markdown("""
