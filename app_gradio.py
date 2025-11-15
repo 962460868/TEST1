@@ -514,7 +514,12 @@ def create_interface():
                         enhance_input = gr.Image(label="上传需要优化的图片", type="numpy")
                         enhance_btn = gr.Button("开始图像优化", variant="primary")
                     with gr.Column():
-                        enhance_output = gr.Image(label="图像优化结果")
+                        enhance_output = gr.Image(
+                            label="优化后图片",
+                            height=600,
+                            show_download_button=True,
+                            show_share_button=False
+                        )
                         enhance_status = gr.Textbox(label="状态", interactive=False)
 
                 enhance_btn.click(
