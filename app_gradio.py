@@ -3,11 +3,14 @@ import requests
 import time
 from datetime import datetime
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 import random
 import logging
 from PIL import Image
 import io
+import base64
+import uuid
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +39,7 @@ POSE_NODE_INFO = [
     {"nodeId": "244", "fieldName": "image", "fieldValue": "placeholder.png", "description": "姿势参考图"}
 ]
 
-# 图像优化 WAN 2.2
+# 图像优化 WAN 2.2 (新版API，支持正反提示词)
 ENHANCE_API_KEY = "9394a5c6d9454cd2b31e24661dd11c3d"
 ENHANCE_WEBAPP_ID_V2_2 = "1986501194824773634"
 ENHANCE_NODE_INFO_V2_2 = [
@@ -46,9 +49,7 @@ ENHANCE_NODE_INFO_V2_2 = [
 # 图像优化 WAN 2.1
 ENHANCE_WEBAPP_ID_V2_1 = "1947599512657453057"
 ENHANCE_NODE_INFO_V2_1 = [
-    {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"},
-    {"nodeId": "60", "fieldName": "text", "fieldValue": "8k, high quality, high detail", "description": "正向提示词补充"},
-    {"nodeId": "4", "fieldName": "text", "fieldValue": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走", "description": "反向提示词"}
+    {"nodeId": "38", "fieldName": "image", "fieldValue": "placeholder.png", "description": "图片输入"}
 ]
 
 # 系统配置
@@ -70,6 +71,148 @@ CONCURRENT_LIMIT_ERRORS = [
 TIMEOUT_ERRORS = [
     "read timed out", "connection timeout", "timeout", "timed out"
 ]
+
+# --- 辅助函数 ---
+def image_to_base64(image):
+    """将 PIL Image 转换为 base64 字符串"""
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
+
+def create_comparison_html(original_image, enhanced_image):
+    """创建图像对比滑块的 HTML - 纯 JavaScript 实现，无需外部库"""
+    original_b64 = image_to_base64(original_image)
+    enhanced_b64 = image_to_base64(enhanced_image)
+
+    # 生成唯一 ID 避免多个实例冲突
+    unique_id = f"comp_{int(time.time() * 1000)}"
+
+    html = f"""
+    <div class="comparison-wrapper-{unique_id}" style="width: 100%; max-width: 1000px; margin: 20px auto; padding: 20px; background: #f8f9fa; border-radius: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+        <div class="comparison-container-{unique_id}" style="position: relative; width: 100%; overflow: hidden; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); user-select: none;">
+            <!-- 优化后的图片（底层，完整显示）-->
+            <img src="{enhanced_b64}" alt="优化后" style="display: block; width: 100%; height: auto; border-radius: 8px;">
+
+            <!-- 原图（顶层，通过 clip-path 控制显示区域）-->
+            <div class="original-overlay-{unique_id}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; clip-path: inset(0 100% 0 0);">
+                <img src="{original_b64}" alt="原图" style="display: block; width: 100%; height: auto; border-radius: 8px;">
+            </div>
+
+            <!-- 分割线和滑块 -->
+            <div class="slider-line-{unique_id}" style="position: absolute; top: 0; left: 0%; width: 3px; height: 100%; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.5); cursor: ew-resize; z-index: 10;">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; background: white; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;">
+                    <div style="width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-right: 8px solid #666; margin-right: 2px;"></div>
+                    <div style="width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 8px solid #666; margin-left: 2px;"></div>
+                </div>
+            </div>
+
+            <!-- 标签 -->
+            <div style="position: absolute; top: 20px; left: 20px; padding: 10px 20px; background: rgba(0, 0, 0, 0.75); color: white; border-radius: 6px; font-size: 15px; font-weight: 600; z-index: 5; backdrop-filter: blur(4px);">
+                📷 原图
+            </div>
+            <div style="position: absolute; top: 20px; right: 20px; padding: 10px 20px; background: rgba(0, 0, 0, 0.75); color: white; border-radius: 6px; font-size: 15px; font-weight: 600; z-index: 5; backdrop-filter: blur(4px);">
+                ✨ 优化后
+            </div>
+        </div>
+
+        <!-- 提示信息 -->
+        <div style="text-align: center; margin-top: 20px; padding: 15px; background: white; border-radius: 8px; color: #495057; font-size: 14px; line-height: 1.6; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+            <div style="margin-bottom: 10px;">
+                💡 <strong style="color: #0066cc;">使用说明</strong>：拖动中间的滑块可以对比原图和优化后的效果
+            </div>
+            <div>
+                ⬅️ <strong style="color: #0066cc;">向左滑动</strong>：查看原图 |
+                ➡️ <strong style="color: #0066cc;">向右滑动</strong>：查看优化后 |
+                默认显示优化后的效果
+            </div>
+            <div style="margin-top: 15px;">
+                <a href="{enhanced_b64}" download="optimized_image.png" style="display: inline-block; padding: 10px 24px; background: #0066cc; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; transition: all 0.3s;">
+                    📥 下载优化后的图片
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {{
+        const container = document.querySelector('.comparison-container-{unique_id}');
+        const overlay = document.querySelector('.original-overlay-{unique_id}');
+        const sliderLine = document.querySelector('.slider-line-{unique_id}');
+
+        if (!container || !overlay || !sliderLine) return;
+
+        let isDragging = false;
+
+        // 初始化位置（默认显示优化后，即原图被完全裁剪）
+        function setPosition(percentage) {{
+            percentage = Math.max(0, Math.min(100, percentage));
+            const clipPercentage = 100 - percentage;
+            overlay.style.clipPath = `inset(0 ${{clipPercentage}}% 0 0)`;
+            sliderLine.style.left = percentage + '%';
+        }}
+
+        // 设置初始位置为 0%（完全显示优化后的图）
+        setPosition(0);
+
+        function handleMove(e) {{
+            if (!isDragging && e.type !== 'click') return;
+
+            const rect = container.getBoundingClientRect();
+            let x;
+
+            if (e.type.includes('touch')) {{
+                x = e.touches[0].clientX;
+            }} else {{
+                x = e.clientX;
+            }}
+
+            const percentage = ((x - rect.left) / rect.width) * 100;
+            setPosition(percentage);
+        }}
+
+        // 鼠标事件
+        sliderLine.addEventListener('mousedown', (e) => {{
+            isDragging = true;
+            e.preventDefault();
+        }});
+
+        document.addEventListener('mousemove', handleMove);
+
+        document.addEventListener('mouseup', () => {{
+            isDragging = false;
+        }});
+
+        // 触摸事件（移动端支持）
+        sliderLine.addEventListener('touchstart', (e) => {{
+            isDragging = true;
+            e.preventDefault();
+        }});
+
+        document.addEventListener('touchmove', handleMove);
+
+        document.addEventListener('touchend', () => {{
+            isDragging = false;
+        }});
+
+        // 点击容器直接跳转
+        container.addEventListener('click', handleMove);
+
+        // 键盘支持
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'ArrowLeft') {{
+                const currentLeft = parseFloat(sliderLine.style.left) || 0;
+                setPosition(currentLeft - 5);
+            }} else if (e.key === 'ArrowRight') {{
+                const currentLeft = parseFloat(sliderLine.style.left) || 0;
+                setPosition(currentLeft + 5);
+            }}
+        }});
+    }})();
+    </script>
+    """
+
+    return html
 
 # --- 核心API函数 ---
 def is_concurrent_limit_error(error_msg):
@@ -376,19 +519,122 @@ def process_pose(character_image, reference_image):
     except Exception as e:
         yield None, f"❌ 处理失败: {str(e)}"
 
-def process_enhance(image, version):
-    """图像优化处理"""
-    if image is None:
-        return None, "❌ 请上传图片"
+# --- 队列管理（支持5并发） ---
+# 全局队列和处理标志
+enhance_queue_global = []
+processing_lock = threading.Lock()
+executor = ThreadPoolExecutor(max_workers=5)  # 5并发
+active_tasks = set()  # 跟踪活跃任务
+
+# --- 风格提示词预设 ---
+STYLE_PROMPTS = {
+    "默认": {
+        "positive": "",
+        "negative": ""
+    },
+    "写实": {
+        "positive": "photorealistic, 8k uhd, raw photo, dslr, soft lighting, high quality, film grain, Fujifilm XT3, sharp focus, detailed skin texture, volumetric fog, cinematic composition, (specific lighting: natural light/golden hour/studio lighting), shot on 35mm/50mm/85mm lens, bokeh, ultra detailed, professional photography",
+        "negative": "cartoon, cg, 3d render, unreal, anime, illustration, painting, sketch, drawing, artwork, low quality, blurry, pixelated, jpeg artifacts, bad anatomy, deformed, mutated, disfigured, poorly drawn face, extra limbs, duplicate, worst quality, watermark, signature, text"
+    },
+    "3D卡通": {
+        "positive": "3d render, pixar style, disney style, octane render, blender, unreal engine 5, cute character design, stylized, volumetric lighting, soft shadows, vibrant colors, high detail, 8k, cartoon aesthetic, smooth surfaces, professional 3d artwork, trending on artstation, perfect topology, clean geometry",
+        "negative": "realistic, photorealistic, real photo, photograph, 2d, flat, sketch, low poly, low quality, blurry, pixelated, bad anatomy, deformed, poorly modeled, bad topology, artifacts, glitches, worst quality, low detail, amateur, noise, grain, dirty render"
+    },
+    "二次元": {
+        "positive": "(masterpiece:1.2), (best quality:1.2), (ultra detailed:1.2), anime style, illustration, high resolution, perfect anatomy, beautiful detailed eyes, detailed face, vibrant colors, soft shading, cel shading, clean lineart, smooth lines, depth of field, bokeh effect, official art, trending on pixiv, by (artist style if needed)",
+        "negative": "realistic, photorealistic, 3d, cg render, low quality, worst quality, normal quality, bad anatomy, bad hands, bad fingers, extra fingers, missing fingers, poorly drawn hands, poorly drawn face, deformed, ugly, mutated, disfigured, fused fingers, extra limbs, duplicate, blurry, pixelated, jpeg artifacts, watermark, signature, username, text, out of frame, cropped"
+    }
+}
+
+def add_to_queue(files, version, style, queue_state):
+    """添加文件到队列（自动触发）"""
+    global enhance_queue_global
+
+    if not files:
+        return None, queue_state, render_queue_dataframe(queue_state), "⚠️ 未选择文件"
+
+    # 初始化队列
+    if queue_state is None:
+        queue_state = []
+
+    # 添加新文件到队列
+    for file in files:
+        file_id = str(uuid.uuid4())[:8]
+        item = {
+            "id": file_id,
+            "file": file,
+            "version": version,
+            "style": style,  # 添加风格参数
+            "status": "pending",
+            "original": None,
+            "enhanced": None,
+            "error": None,
+            "start_time": None  # 开始处理的时间
+        }
+        queue_state.append(item)
+        enhance_queue_global.append(item)
+
+    # 启动后台处理（如果未在处理中）
+    start_background_processing()
+
+    # 清空文件选择器并更新显示
+    return None, queue_state, render_queue_dataframe(queue_state), f"📋 已添加 {len(files)} 个文件到队列"
+
+def start_background_processing():
+    """启动后台处理线程（支持5并发）"""
+    global active_tasks
+
+    with processing_lock:
+        # 获取所有待处理的任务
+        pending_tasks = [task for task in enhance_queue_global if task["status"] == "pending"]
+
+        # 计算可以启动的新任务数量
+        available_slots = 5 - len(active_tasks)
+
+        # 提交新任务到线程池
+        for task in pending_tasks[:available_slots]:
+            if task["id"] not in active_tasks:
+                active_tasks.add(task["id"])
+                logger.info(f"🚀 提交任务到线程池: {task['id']} (当前活跃: {len(active_tasks)}/5)")
+                executor.submit(process_single_item_wrapper, task)
+
+def process_single_item_wrapper(item):
+    """包装器：处理单个任务并更新活跃任务集"""
+    global active_tasks
 
     try:
-        # 转换图片格式
-        img = Image.fromarray(image)
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_byte_arr = img_byte_arr.getvalue()
+        process_single_item(item)
+    except Exception as e:
+        logger.error(f"处理任务失败: {e}")
+        item["status"] = "error"
+        item["error"] = str(e)
+    finally:
+        # 任务完成后从活跃集合中移除
+        with processing_lock:
+            active_tasks.discard(item["id"])
+
+        # 尝试启动下一个任务
+        start_background_processing()
+
+def process_single_item(item):
+    """处理单个图片优化任务"""
+    try:
+        # 更新状态为处理中，记录开始时间
+        item["status"] = "processing"
+        item["start_time"] = time.time()  # 记录开始时间用于倒计时
+        logger.info(f"📝 任务 {item['id']} 状态: pending -> processing")
+
+        # 读取图片文件
+        img_data = item["file"]
+        img = Image.open(io.BytesIO(img_data))
+
+        # 保存原图（转为PNG）
+        original_buffer = io.BytesIO()
+        img.save(original_buffer, format='PNG')
+        item["original"] = original_buffer.getvalue()
 
         # 根据版本选择配置
+        version = item["version"]
         if version == "WAN 2.1":
             webapp_id = ENHANCE_WEBAPP_ID_V2_1
             node_info = ENHANCE_NODE_INFO_V2_1
@@ -399,8 +645,8 @@ def process_enhance(image, version):
             image_node_id = "14"
 
         # 上传文件
-        yield None, f"⏳ 正在上传图片 [{version}]..."
-        uploaded_filename = upload_file_with_retry(img_byte_arr, "input.png", ENHANCE_API_KEY)
+        logger.info(f"⬆️ 任务 {item['id']} 开始上传文件到API")
+        uploaded_filename = upload_file_with_retry(item["original"], f"input_{item['id']}.png", ENHANCE_API_KEY)
 
         # 构建节点信息
         node_info_list = copy.deepcopy(node_info)
@@ -408,8 +654,41 @@ def process_enhance(image, version):
             if node["nodeId"] == image_node_id:
                 node["fieldValue"] = uploaded_filename
 
+        # 添加风格提示词（如果不是默认风格）
+        style = item.get("style", "默认")
+        if style != "默认" and style in STYLE_PROMPTS:
+            prompts = STYLE_PROMPTS[style]
+
+            # 根据版本选择不同的nodeId
+            if version == "WAN 2.2":
+                positive_node_id = "66"  # WAN 2.2的正向提示词节点
+                negative_node_id = "21"  # WAN 2.2的反向提示词节点
+            else:  # WAN 2.1
+                positive_node_id = "60"  # WAN 2.1的正向提示词节点
+                negative_node_id = "4"   # WAN 2.1的反向提示词节点
+
+            # 添加正向提示词
+            if prompts["positive"]:
+                node_info_list.append({
+                    "nodeId": positive_node_id,
+                    "fieldName": "text",
+                    "fieldValue": prompts["positive"],
+                    "description": "text"
+                })
+
+            # 添加反向提示词
+            if prompts["negative"]:
+                node_info_list.append({
+                    "nodeId": negative_node_id,
+                    "fieldName": "text",
+                    "fieldValue": prompts["negative"],
+                    "description": "text"
+                })
+
+            logger.info(f"🎨 任务 {item['id']} 应用风格: {style} [正向节点:{positive_node_id}, 反向节点:{negative_node_id}]")
+
         # 启动任务
-        yield None, f"⏳ 正在启动图像优化任务 [{version}]..."
+        logger.info(f"🎬 任务 {item['id']} 提交API处理请求 [{version}]")
         task_id = run_task_with_retry(ENHANCE_API_KEY, webapp_id, node_info_list)
 
         # 轮询状态
@@ -418,9 +697,6 @@ def process_enhance(image, version):
             time.sleep(POLL_INTERVAL)
             poll_count += 1
             status = get_task_status(ENHANCE_API_KEY, task_id)
-
-            progress = min(90, 35 + (55 * poll_count / MAX_POLL_COUNT))
-            yield None, f"⏳ 处理中 [{version}]... {int(progress)}%"
 
             if status == "SUCCESS":
                 break
@@ -431,21 +707,175 @@ def process_enhance(image, version):
             raise Exception("任务超时")
 
         # 获取结果
-        yield None, "⏳ 正在下载结果..."
+        logger.info(f"⬇️ 任务 {item['id']} 开始下载结果")
         result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
         result_data = download_result_image(result_url)
 
-        # 转换为图片
+        # 保存优化后的图片（强制转换为PNG格式）
         result_image = Image.open(io.BytesIO(result_data))
+        logger.info(f"📸 任务 {item['id']} API返回图片格式: {result_image.format}")
 
-        yield result_image, f"✅ 图像优化完成 [{version}]！"
+        # 如果图片有透明通道(RGBA)，转换为RGB
+        if result_image.mode == 'RGBA':
+            # 创建白色背景
+            background = Image.new('RGB', result_image.size, (255, 255, 255))
+            background.paste(result_image, mask=result_image.split()[3])  # 使用alpha通道作为mask
+            result_image = background
+        elif result_image.mode != 'RGB':
+            result_image = result_image.convert('RGB')
+
+        enhanced_buffer = io.BytesIO()
+        result_image.save(enhanced_buffer, format='PNG')
+        item["enhanced"] = enhanced_buffer.getvalue()
+        logger.info(f"💾 任务 {item['id']} 已转换并保存为PNG格式")
+
+        # 更新状态为完成
+        item["status"] = "completed"
+        logger.info(f"✅ 任务 {item['id']} 完成！状态: processing -> completed")
 
     except Exception as e:
-        yield None, f"❌ 处理失败: {str(e)}"
+        item["status"] = "error"
+        item["error"] = str(e)
+        logger.error(f"❌ 任务 {item['id']} 失败: {str(e)}")
+        raise
+
+def get_queue_status(queue_state):
+    """获取队列状态（定时刷新）"""
+    if queue_state is None:
+        return queue_state, []
+    return queue_state, render_queue_dataframe(queue_state)
+
+def render_queue_dataframe(queue_state):
+    """渲染队列为DataFrame数据（带倒计时）"""
+    if not queue_state:
+        return []
+
+    # 生成DataFrame数据
+    data = []
+    for item in queue_state:
+        # 显示模型版本
+        model_version = item.get("version", "---")
+
+        # 显示风格
+        style = item.get("style", "默认")
+
+        # 状态显示逻辑
+        status = item["status"]
+        if status == "pending":
+            status_display = "⏳ 等待中"
+        elif status == "processing":
+            # 倒计时逻辑：从2分30秒开始
+            start_time = item.get("start_time")
+            if start_time:
+                elapsed = time.time() - start_time
+                remaining = 150 - elapsed  # 150秒 = 2分30秒
+
+                if remaining > 0:
+                    # 显示倒计时
+                    minutes = int(remaining // 60)
+                    seconds = int(remaining % 60)
+                    status_display = f"预计还剩{minutes}:{seconds:02d}"
+                else:
+                    # 超时了还在处理
+                    status_display = "全力处理中~"
+            else:
+                status_display = "🔄 处理中"
+        elif status == "completed":
+            status_display = "✅ 已完成"
+        elif status == "error":
+            status_display = "❌ 失败"
+        else:
+            status_display = "未知"
+
+        # 操作列
+        view_text = "点击查看" if status == "completed" else "---"
+
+        # 下载列 - 改为序号，用于点击触发下载
+        download_text = "📥 下载" if status == "completed" else "---"
+
+        data.append([
+            item["id"],
+            status_display,
+            model_version,
+            style,
+            view_text,
+            download_text
+        ])
+
+    return data
+
+def handle_dataframe_click(evt: gr.SelectData, queue_state):
+    """处理DataFrame点击事件（显示图片）"""
+    if not queue_state or evt.index[0] >= len(queue_state):
+        return None, None
+
+    row_index = evt.index[0]
+    item = queue_state[row_index]
+
+    # 显示图片
+    if item["status"] == "completed" and item["original"] and item["enhanced"]:
+        # 转换为PIL Image
+        original_img = Image.open(io.BytesIO(item["original"]))
+        enhanced_img = Image.open(io.BytesIO(item["enhanced"]))
+
+        # 统一高度到800px，保持宽高比
+        target_height = 800
+
+        # 调整原图大小
+        orig_width, orig_height = original_img.size
+        if orig_height != target_height:
+            scale = target_height / orig_height
+            new_width = int(orig_width * scale)
+            original_img = original_img.resize((new_width, target_height), Image.LANCZOS)
+
+        # 调整优化图大小
+        enh_width, enh_height = enhanced_img.size
+        if enh_height != target_height:
+            scale = target_height / enh_height
+            new_width = int(enh_width * scale)
+            enhanced_img = enhanced_img.resize((new_width, target_height), Image.LANCZOS)
+
+        # 确保图片以PNG格式返回（用于下载）
+        # Gradio会使用这个PIL Image对象，保持PNG格式
+        enhanced_img.format = 'PNG'
+        original_img.format = 'PNG'
+
+        return original_img, enhanced_img
+
+    return None, None
+
+def clear_queue():
+    """清空队列"""
+    global enhance_queue_global
+    enhance_queue_global = []
+    return None, [], "✅ 队列已清空"
 
 # --- Gradio界面 ---
 def create_interface():
-    with gr.Blocks(title="RunningHub AI - 智能图片处理工具", theme=gr.themes.Soft()) as demo:
+    # 自定义CSS，放大优化后图片的下载按钮
+    custom_css = """
+    /* 放大优化后图片右上角的下载按钮 */
+    .image-container button[aria-label*="Download"] {
+        transform: scale(1.3);
+        transition: transform 0.2s;
+    }
+    .image-container button[aria-label*="Download"]:hover {
+        transform: scale(1.5);
+    }
+    /* 针对图片组件的下载图标 */
+    .image-frame button.download-button,
+    .image-frame button[title*="download"],
+    .image-frame button[title*="Download"] {
+        transform: scale(1.3) !important;
+    }
+    .image-frame button.download-button:hover,
+    .image-frame button[title*="download"]:hover,
+    .image-frame button[title*="Download"]:hover {
+        transform: scale(1.5) !important;
+    }
+    """
+
+    with gr.Blocks(title="RunningHub AI - 智能图片处理工具", theme=gr.themes.Soft(), css=custom_css) as demo:
         gr.Markdown("""
         # 🎨 RunningHub AI - 智能图片处理工具
 
@@ -502,25 +932,80 @@ def create_interface():
                     outputs=[pose_output, pose_status]
                 )
 
-            # 图像优化
+            # 图像优化（队列上传 - 自动处理 + DataFrame列表）
             with gr.Tab("🎨 图像优化"):
                 with gr.Row():
-                    with gr.Column():
+                    # 左侧：上传和控制区（缩小占比）
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 📤 上传图片")
+                        gr.Markdown("*拖拽或点击选择，自动进入队列*")
                         enhance_version = gr.Radio(
                             choices=["WAN 2.2", "WAN 2.1"],
                             value="WAN 2.2",
-                            label="选择模型版本"
+                            label="模型版本"
                         )
-                        enhance_input = gr.Image(label="上传需要优化的图片", type="numpy")
-                        enhance_btn = gr.Button("开始图像优化", variant="primary")
-                    with gr.Column():
-                        enhance_output = gr.Image(label="图像优化结果")
-                        enhance_status = gr.Textbox(label="状态", interactive=False)
+                        enhance_style = gr.Radio(
+                            choices=["默认", "写实", "3D卡通", "二次元"],
+                            value="默认",
+                            label="风格"
+                        )
+                        enhance_files = gr.File(
+                            label="选择图片（支持多选）",
+                            file_count="multiple",
+                            file_types=["image"],
+                            type="binary"
+                        )
+                        clear_btn = gr.Button("🗑️ 清空队列", size="sm")
 
-                enhance_btn.click(
-                    fn=process_enhance,
-                    inputs=[enhance_input, enhance_version],
-                    outputs=[enhance_output, enhance_status]
+                        gr.Markdown("---")
+                        enhance_status = gr.Textbox(label="状态", interactive=False, lines=2)
+
+                    # 右侧：队列展示区
+                    with gr.Column(scale=4):
+                        gr.Markdown("### 📊 处理队列")
+                        queue_display = gr.Dataframe(
+                            headers=["ID", "状态", "模型", "风格", "操作", "下载"],
+                            datatype=["str", "str", "str", "str", "str", "str"],
+                            label="队列列表（点击行查看详情，点击下载列下载PNG）",
+                            interactive=False
+                        )
+
+                        gr.Markdown("#### 🖼️ 图片查看（点击列表行查看，Tabs切换对比）")
+                        with gr.Tabs():
+                            with gr.Tab("📷 原图"):
+                                enhance_original = gr.Image(label="原图", show_label=False, height=600)
+                            with gr.Tab("🎨 优化后"):
+                                enhance_enhanced = gr.Image(label="优化后", show_label=False, height=600, show_download_button=True)
+
+                # 隐藏的队列状态
+                queue_state = gr.State(value=None)
+
+                # 自动处理：文件上传时自动添加到队列
+                enhance_files.upload(
+                    fn=add_to_queue,
+                    inputs=[enhance_files, enhance_version, enhance_style, queue_state],
+                    outputs=[enhance_files, queue_state, queue_display, enhance_status]
+                )
+
+                # 点击列表行显示图片
+                queue_display.select(
+                    fn=handle_dataframe_click,
+                    inputs=[queue_state],
+                    outputs=[enhance_original, enhance_enhanced]
+                )
+
+                # 清空队列
+                clear_btn.click(
+                    fn=clear_queue,
+                    outputs=[queue_state, queue_display, enhance_status]
+                )
+
+                # 定时刷新队列显示（0.5秒更新一次，更及时）
+                timer = gr.Timer(value=0.5, active=True)
+                timer.tick(
+                    fn=get_queue_status,
+                    inputs=[queue_state],
+                    outputs=[queue_state, queue_display]
                 )
 
         gr.Markdown("""
@@ -529,7 +1014,15 @@ def create_interface():
         - **去水印**：智能去除图片中的水印，保持图片主体完整
         - **溶图打光**：智能溶图打光处理，提升图片光影效果
         - **姿态迁移**：需要同时上传角色图片和姿势参考图
-        - **图像优化**：支持 WAN 2.1 和 WAN 2.2 两个模型版本
+        - **图像优化**：支持队列上传和批量处理（DataFrame列表 + Tabs切换）
+          - 📤 支持多图片同时上传（拖拽或点击选择）
+          - 🔄 自动队列处理，无需等待上一张完成
+          - 📊 轻量级列表展示，实时显示处理状态
+          - 🖱️ 点击列表行查看图片详情
+          - 📷 通过Tabs切换查看原图和优化后的对比
+          - 💾 图片固定高度800px，宽度按比例缩放
+          - 📥 点击优化后图片右上角的下载图标可下载PNG格式图片
+          - 🗑️ 可随时清空队列重新开始
         """)
 
     return demo
