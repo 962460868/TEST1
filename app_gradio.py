@@ -711,11 +711,23 @@ def process_single_item(item):
         result_url = fetch_task_outputs(ENHANCE_API_KEY, task_id, "enhance")
         result_data = download_result_image(result_url)
 
-        # 保存优化后的图片（PNG格式）
+        # 保存优化后的图片（强制转换为PNG格式）
         result_image = Image.open(io.BytesIO(result_data))
+        logger.info(f"📸 任务 {item['id']} API返回图片格式: {result_image.format}")
+
+        # 如果图片有透明通道(RGBA)，转换为RGB
+        if result_image.mode == 'RGBA':
+            # 创建白色背景
+            background = Image.new('RGB', result_image.size, (255, 255, 255))
+            background.paste(result_image, mask=result_image.split()[3])  # 使用alpha通道作为mask
+            result_image = background
+        elif result_image.mode != 'RGB':
+            result_image = result_image.convert('RGB')
+
         enhanced_buffer = io.BytesIO()
         result_image.save(enhanced_buffer, format='PNG')
         item["enhanced"] = enhanced_buffer.getvalue()
+        logger.info(f"💾 任务 {item['id']} 已转换并保存为PNG格式")
 
         # 更新状态为完成
         item["status"] = "completed"
@@ -743,6 +755,9 @@ def render_queue_dataframe(queue_state):
     for item in queue_state:
         # 显示模型版本
         model_version = item.get("version", "---")
+
+        # 显示风格
+        style = item.get("style", "默认")
 
         # 状态显示逻辑
         status = item["status"]
@@ -775,26 +790,39 @@ def render_queue_dataframe(queue_state):
         # 操作列
         view_text = "点击查看" if status == "completed" else "---"
 
-        # 下载列
-        download_text = "下载图片" if status == "completed" else "---"
+        # 下载列 - 改为序号，用于点击触发下载
+        download_text = "📥 下载" if status == "completed" else "---"
 
         data.append([
             item["id"],
             status_display,
             model_version,
+            style,
             view_text,
             download_text
         ])
 
     return data
 
-def show_selected_image(evt: gr.SelectData, queue_state):
-    """点击DataFrame行显示图片（统一高度800px）"""
+def handle_dataframe_click(evt: gr.SelectData, queue_state):
+    """处理DataFrame点击事件（区分查看和下载）"""
     if not queue_state or evt.index[0] >= len(queue_state):
-        return None, None, gr.update(visible=False), None
+        return None, None, gr.update(visible=False), None, None
 
-    item = queue_state[evt.index[0]]
+    row_index = evt.index[0]
+    col_index = evt.index[1] if len(evt.index) > 1 else 0
+    item = queue_state[row_index]
 
+    # 点击下载列（第5列，索引5）
+    if col_index == 5 and item["status"] == "completed" and item.get("enhanced"):
+        # 直接触发下载
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_enhanced_{item['id']}.png", mode='wb') as f:
+            f.write(item["enhanced"])
+            temp_path = f.name
+        return None, None, gr.update(visible=False), None, temp_path
+
+    # 点击其他列，显示图片
     if item["status"] == "completed" and item["original"] and item["enhanced"]:
         # 转换为PIL Image
         original_img = Image.open(io.BytesIO(item["original"]))
@@ -817,9 +845,9 @@ def show_selected_image(evt: gr.SelectData, queue_state):
             new_width = int(enh_width * scale)
             enhanced_img = enhanced_img.resize((new_width, target_height), Image.LANCZOS)
 
-        return original_img, enhanced_img, gr.update(visible=True), item
+        return original_img, enhanced_img, gr.update(visible=True), item, None
 
-    return None, None, gr.update(visible=False), None
+    return None, None, gr.update(visible=False), None, None
 
 def download_enhanced_image(selected_item):
     """下载优化后的PNG图片"""
@@ -931,9 +959,9 @@ def create_interface():
                     with gr.Column(scale=4):
                         gr.Markdown("### 📊 处理队列")
                         queue_display = gr.Dataframe(
-                            headers=["ID", "状态", "模型", "操作", "下载"],
-                            datatype=["str", "str", "str", "str", "str"],
-                            label="队列列表（点击行查看详情）",
+                            headers=["ID", "状态", "模型", "风格", "操作", "下载"],
+                            datatype=["str", "str", "str", "str", "str", "str"],
+                            label="队列列表（点击行查看详情，点击下载列下载PNG）",
                             interactive=False
                         )
 
@@ -947,7 +975,7 @@ def create_interface():
                         # 下载按钮和文件组件
                         with gr.Row():
                             download_btn = gr.Button("📥 下载优化后图片 (PNG)", size="sm", visible=False)
-                            download_file = gr.File(label="下载", visible=False, interactive=False)
+                            download_file = gr.File(label="PNG文件下载", visible=True, interactive=False)
 
                 # 隐藏的队列状态和当前选中的项
                 queue_state = gr.State(value=None)
@@ -960,11 +988,11 @@ def create_interface():
                     outputs=[enhance_files, queue_state, queue_display, enhance_status]
                 )
 
-                # 点击列表行显示图片
+                # 点击列表行显示图片或下载
                 queue_display.select(
-                    fn=show_selected_image,
+                    fn=handle_dataframe_click,
                     inputs=[queue_state],
-                    outputs=[enhance_original, enhance_enhanced, download_btn, selected_item_state]
+                    outputs=[enhance_original, enhance_enhanced, download_btn, selected_item_state, download_file]
                 )
 
                 # 点击下载按钮下载PNG图片
