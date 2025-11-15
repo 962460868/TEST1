@@ -1357,18 +1357,29 @@ def main():
                     # 结果处理
                     if task.status == "SUCCESS":
                         elapsed_str = f"{int(task.elapsed_time//60)}:{int(task.elapsed_time%60):02d}"
-                        
+
                         if task.task_type == "watermark":
                             st.success(f"🚿 去水印完成! 用时: {elapsed_str}")
+                            create_download_buttons(task)
                         elif task.task_type == "lighting":
                             st.success(f"✨ 溶图打光完成! 用时: {elapsed_str}")
+                            create_download_buttons(task)
                         elif task.task_type == "pose":
                             result_count = len(task.result_data_list)
                             st.success(f"🎉 姿态迁移完成! 用时: {elapsed_str} | 生成了 {result_count} 个结果")
+                            create_download_buttons(task)
                         else:
+                            # 图像优化 - 显示图片而不是下载按钮
                             st.success(f"🎉 图像优化完成! 用时: {elapsed_str}")
-                        
-                        create_download_buttons(task)
+                            st.markdown("### 📸 优化后图片")
+
+                            # 将字节数据转换为PIL图片并显示
+                            from PIL import Image
+                            import io
+                            result_image = Image.open(io.BytesIO(task.result_data))
+
+                            # 显示图片，用户可以通过右上角下载图标下载完整PNG
+                            st.image(result_image, caption=f"优化结果 - {task.file_name}", use_container_width=True)
 
                     elif task.status == "FAILED":
                         st.error(f"💥 处理失败")
